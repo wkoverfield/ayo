@@ -30,6 +30,12 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/** True if ayod is running. Used by the agent hooks for self-healing toasts. */
+export function isDaemonAlive(): boolean {
+  const pid = readPid();
+  return pid != null && isAlive(pid);
+}
+
 export function daemonStart(): void {
   const existing = readPid();
   if (existing && isAlive(existing)) {

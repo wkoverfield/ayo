@@ -21,6 +21,8 @@ import {
   daemonStop,
   daemonLogs,
 } from "./daemon-ctl.js";
+import { surfaceUnread } from "./agent.js";
+import { hooksInstall, hooksStatus, hooksUninstall } from "./hooks.js";
 
 const program = new Command();
 program.name("ayo").description("Ping your teammates from inside Codex and Claude.").version("0.0.0");
@@ -149,6 +151,37 @@ daemon.command("start").description("Start ayod in the background").action(() =>
 daemon.command("status").description("Is ayod running & connected?").action(() => daemonStatus());
 daemon.command("stop").description("Stop ayod").action(() => daemonStop());
 daemon.command("logs").description("Tail ayod logs").action(() => daemonLogs());
+
+// ── hooks (Layer 1: agent surfacing) ─────────────────────────────────────────
+const hooks = program.command("hooks").description("Wire Ayo into Codex & Claude Code");
+function targets(opts: { claude?: boolean; codex?: boolean }): { claude: boolean; codex: boolean } {
+  // No flag = both.
+  if (!opts.claude && !opts.codex) return { claude: true, codex: true };
+  return { claude: !!opts.claude, codex: !!opts.codex };
+}
+hooks
+  .command("install")
+  .description("Install agent hooks (default: both)")
+  .option("--claude", "Claude Code only")
+  .option("--codex", "Codex only")
+  .action((opts) => hooksInstall(targets(opts)));
+hooks.command("status").description("Show which agents are wired").action(() => hooksStatus());
+hooks
+  .command("uninstall")
+  .description("Remove agent hooks (default: both)")
+  .option("--claude", "Claude Code only")
+  .option("--codex", "Codex only")
+  .action((opts) => hooksUninstall(targets(opts)));
+
+// ── agent surfacing entrypoints (hook targets; hidden) ───────────────────────
+program
+  .command("agent-context", { hidden: true })
+  .description("Print unread Ayos for agent context injection (Claude hooks)")
+  .action(() => surfaceUnread({ print: true }));
+program
+  .command("notify-check", { hidden: true })
+  .description("Toast fallback for unread Ayos (Codex notify)")
+  .action(() => surfaceUnread({ print: false }));
 
 // ── doctor ───────────────────────────────────────────────────────────────────
 program

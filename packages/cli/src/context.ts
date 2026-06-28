@@ -32,7 +32,7 @@ export function captureContext(opts: { withDiff?: boolean } = {}): AyoContext | 
   if (changed) ctx.changedFiles = changed.split("\n").filter(Boolean);
 
   const stat = git(["diff", "--stat", "HEAD"]);
-  if (stat) ctx.diffStat = stat.split("\n").filter(Boolean).pop() ?? undefined;
+  if (stat) ctx.diffStat = stat.split("\n").filter(Boolean).pop()?.trim() ?? undefined;
 
   if (opts.withDiff) {
     const diff = git(["diff", "HEAD"]) ?? "";

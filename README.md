@@ -41,9 +41,11 @@ Relay ─▶ local Ayo daemon (ayod) ─▶ OS notification + local inbox   ← 
 - **The daemon receives.** A tiny background process holds one realtime
   connection to the relay and pops a native notification the instant an Ayo
   arrives. No `watch` pane to babysit.
-- **The agents surface it.** Claude Code (`SessionStart`/`Stop`) and Codex
-  (`notify`) hooks quietly drop your unread Ayos into the model at natural
-  breakpoints — so the ping feels native when your agent picks back up.
+- **The agents surface it.** Run `ayo hooks install` and Claude Code
+  (`SessionStart` + `UserPromptSubmit`) quietly drops your unread Ayos into the
+  model at natural breakpoints — so the ping feels native when your agent picks
+  back up. Codex's `notify` gets a toast fallback. Surfacing never counts as
+  "read."
 - **You reply on demand.** _"Check my Ayos"_ inside the agent, or `ayo inbox` in
   the terminal.
 
@@ -64,6 +66,8 @@ ayo invite                      # share the code
 
 # ...your teammate runs `ayo join <code>`, then:
 ayo kenny "demo is cooked"      # → native toast on Kenny's machine
+
+ayo hooks install               # surface unread Ayos inside Codex & Claude
 ```
 
 The daemon is meant to be **boring and inspectable** — never sketchy:

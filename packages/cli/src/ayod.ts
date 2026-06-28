@@ -6,35 +6,11 @@
  * anything `read` — that requires explicit human action over HTTP.
  */
 
-import { join } from "node:path";
-import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import WebSocket from "ws";
-import type { Ayo, ServerFrame, AckFrame } from "@ayo-dev/core";
-import { AYO_DIR, loadConfig, requireSession } from "./config.js";
+import type { ServerFrame, AckFrame } from "@ayo-dev/core";
+import { loadConfig, requireSession } from "./config.js";
+import { upsertInbox } from "./inbox-store.js";
 import { notifyAyo } from "./notify.js";
-
-const INBOX_PATH = join(AYO_DIR, "inbox.json");
-
-interface InboxFile {
-  ayos: Ayo[];
-  updatedAt: string;
-}
-
-function loadInbox(): InboxFile {
-  if (!existsSync(INBOX_PATH)) return { ayos: [], updatedAt: new Date(0).toISOString() };
-  try {
-    return JSON.parse(readFileSync(INBOX_PATH, "utf8")) as InboxFile;
-  } catch {
-    return { ayos: [], updatedAt: new Date(0).toISOString() };
-  }
-}
-
-function upsertInbox(ayo: Ayo): void {
-  const inbox = loadInbox();
-  if (!inbox.ayos.some((a) => a.id === ayo.id)) inbox.ayos.push(ayo);
-  inbox.updatedAt = new Date().toISOString();
-  writeFileSync(INBOX_PATH, JSON.stringify(inbox, null, 2));
-}
 
 function wsUrl(relayUrl: string, teamId: string, token: string): string {
   const base = relayUrl.replace(/^http/, "ws");
