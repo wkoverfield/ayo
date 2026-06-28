@@ -11,6 +11,7 @@ import type {
   CreateTeamRequest,
   CreateTeamResponse,
   DevicePollResponse,
+  DeviceStartResponse,
   JoinTeamRequest,
   JoinTeamResponse,
   MeResponse,
@@ -21,9 +22,11 @@ import { apiError, json, type Env } from "./env.js";
 import {
   authenticate,
   devStubEnabled,
+  findOrCreateGithubUser,
   issueSession,
   putUser,
 } from "./auth.js";
+import { githubDeviceStart, githubDevicePoll, githubGetUser } from "./github.js";
 import {
   addMember,
   createTeam,
@@ -43,11 +46,13 @@ export default {
 
     try {
       // ── Auth (no session required) ──────────────────────────────────────
+      // NOTE: `await` so a handler rejection is caught by the catch below
+      // (returning a bare promise would let it escape to a raw 500).
       if (path === "/v1/auth/device" && req.method === "POST") {
-        return handleDeviceStart(req, env);
+        return await handleDeviceStart(req, env);
       }
       if (path === "/v1/auth/device/poll" && req.method === "POST") {
-        return handleDevicePoll(req, env);
+        return await handleDevicePoll(req, env);
       }
 
       // ── Everything below requires a session ─────────────────────────────
@@ -92,7 +97,7 @@ export default {
         // any authenticated user could read/resolve an Ayo by guessing its id.
         const membership = await getMembership(env, teamId, userId);
         if (!membership) return apiError("not_a_member", "You are not a member of this team.");
-        return forwardToTeam(req, env, userId, teamId, `/internal/ayo/${ayoId}/${flatAyo[2]}`, membership.handle);
+        return await forwardToTeam(req, env, userId, teamId, `/internal/ayo/${ayoId}/${flatAyo[2]}`, membership.handle);
       }
 
       // ── Team-scoped routes -> forward to the team DO ────────────────────
@@ -104,7 +109,7 @@ export default {
         if (!team) return apiError("team_not_found", "No team with that id.");
         const membership = await getMembership(env, teamId as never, userId);
         if (!membership) return apiError("not_a_member", "You are not a member of this team.");
-        return forwardToTeam(req, env, userId, teamId as never, `/internal${rest || ""}`, membership.handle);
+        return await forwardToTeam(req, env, userId, teamId as never, `/internal${rest || ""}`, membership.handle);
       }
 
       return apiError("team_not_found", "Unknown route.");
@@ -160,33 +165,58 @@ async function handleDeviceStart(req: Request, env: Env): Promise<Response> {
     const handle = url.searchParams.get("handle") ?? "dev";
     const deviceCode = `dev_${crypto.randomUUID()}`;
     await env.AYO_KV.put(`device:${deviceCode}`, handle, { expirationTtl: 600 });
-    return json({
+    const body: DeviceStartResponse = {
       device_code: deviceCode,
       user_code: handle.toUpperCase().slice(0, 6).padEnd(4, "X"),
       verification_uri: "https://ayo.dev/device (dev stub: auto-approved)",
       interval: 1,
-    });
+      expires_in: 600,
+    };
+    return json(body);
   }
-  // TODO: real GitHub device flow via https://github.com/login/device/code
-  return apiError("unauthorized", "GitHub device flow not yet implemented.");
+  if (!env.GITHUB_CLIENT_ID) return apiError("unauthorized", "Auth is not configured on this relay.");
+
+  const gh = await githubDeviceStart(env.GITHUB_CLIENT_ID);
+  const body: DeviceStartResponse = {
+    device_code: gh.device_code,
+    user_code: gh.user_code,
+    verification_uri: gh.verification_uri,
+    interval: gh.interval,
+    expires_in: gh.expires_in,
+  };
+  return json(body);
 }
 
 async function handleDevicePoll(req: Request, env: Env): Promise<Response> {
-  // TODO: real GitHub device flow. Until then only the explicit dev stub works.
-  if (!devStubEnabled(env)) return apiError("unauthorized", "GitHub device flow not yet implemented.");
-
   const { device_code } = (await req.json()) as { device_code: string };
-  const handle = await env.AYO_KV.get(`device:${device_code}`);
-  if (!handle) return apiError("invalid_token", "Unknown or expired device code.");
 
-  // Reuse an existing dev user with this handle, else mint one.
-  const existing = await env.AYO_KV.get(`devhandle:${handle}`);
-  const userId = existing ?? newUserId();
-  const user: PublicUser = { id: userId as never, handle, name: handle };
-  await putUser(env, user);
-  if (!existing) await env.AYO_KV.put(`devhandle:${handle}`, userId);
-  const session_token = await issueSession(env, userId as never);
-  await env.AYO_KV.delete(`device:${device_code}`);
-  const body: DevicePollResponse = { session_token, user };
-  return json(body);
+  if (devStubEnabled(env)) {
+    const handle = await env.AYO_KV.get(`device:${device_code}`);
+    if (!handle) return apiError("invalid_token", "Unknown or expired device code.");
+    // Reuse an existing dev user with this handle, else mint one.
+    const existing = await env.AYO_KV.get(`devhandle:${handle}`);
+    const userId = existing ?? newUserId();
+    const user: PublicUser = { id: userId as never, handle, name: handle };
+    await putUser(env, user);
+    if (!existing) await env.AYO_KV.put(`devhandle:${handle}`, userId);
+    const session_token = await issueSession(env, userId as never);
+    await env.AYO_KV.delete(`device:${device_code}`);
+    return json({ status: "complete", session_token, user } satisfies DevicePollResponse);
+  }
+
+  if (!env.GITHUB_CLIENT_ID) return apiError("unauthorized", "Auth is not configured on this relay.");
+
+  const poll = await githubDevicePoll(env.GITHUB_CLIENT_ID, device_code);
+  if (!poll.ok) {
+    // Still waiting / told to back off — the CLI keeps polling.
+    if (poll.error === "authorization_pending") return json({ status: "pending" } satisfies DevicePollResponse);
+    if (poll.error === "slow_down") return json({ status: "slow_down", interval: 5 } satisfies DevicePollResponse);
+    // Terminal: expired_token, access_denied, device_flow_disabled, ...
+    return apiError("unauthorized", `Device flow failed: ${poll.error}`);
+  }
+
+  const gh = await githubGetUser(poll.accessToken);
+  const user = await findOrCreateGithubUser(env, gh);
+  const session_token = await issueSession(env, user.id);
+  return json({ status: "complete", session_token, user } satisfies DevicePollResponse);
 }

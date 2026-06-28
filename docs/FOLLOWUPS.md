@@ -25,9 +25,11 @@ independent code review of the scaffold + Layer 1.
 
 ## Still open from the build plan
 
-- **Real GitHub device flow** (#2) — the relay auth is an explicit dev stub
-  (`AYO_DEV_AUTH=1`); the real OAuth device exchange is a TODO in
-  `packages/relay/src/index.ts`.
+- **Real GitHub device flow** (#2) — ✅ implemented (`packages/relay/src/github.ts`
+  + the device handlers in `index.ts`, real poll loop in `cli/src/ayo.ts`).
+  Pending: register the OAuth App, set `GITHUB_CLIENT_ID`, and run one real
+  browser-authorized login end to end (see `docs/auth-setup.md`). The dev stub
+  (`AYO_DEV_AUTH=1`) remains for local testing.
 - **Real daemon install** (#3) — `ayo daemon start` spawns a detached process +
   pidfile; ADR 0001's target is a launchd/systemd user service.
 - **Windows daemon** — install path is mac/Linux first; the installer should

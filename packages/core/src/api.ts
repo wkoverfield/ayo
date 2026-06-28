@@ -35,6 +35,8 @@ export interface DeviceStartResponse {
   user_code: string;
   verification_uri: string;
   interval: number;
+  /** Seconds until the device/user codes expire. */
+  expires_in: number;
 }
 
 export interface DevicePollRequest {
@@ -47,10 +49,11 @@ export interface PublicUser {
   name: string;
 }
 
-export interface DevicePollResponse {
-  session_token: string;
-  user: PublicUser;
-}
+/** Poll is long-running: the CLI calls it on an interval until `complete`. */
+export type DevicePollResponse =
+  | { status: "complete"; session_token: string; user: PublicUser }
+  | { status: "pending" }
+  | { status: "slow_down"; interval: number };
 
 // ── Teams ──────────────────────────────────────────────────────────────────
 

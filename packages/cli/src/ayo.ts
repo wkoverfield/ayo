@@ -4,6 +4,7 @@
  * manages the daemon. Receiving is the daemon's job (ADR 0001/0002).
  */
 
+import { spawn } from "node:child_process";
 import { Command } from "commander";
 import pc from "picocolors";
 import {
@@ -33,19 +34,48 @@ function fail(err: unknown): never {
   process.exit(1);
 }
 
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Best-effort: open the verification URL in the user's browser. */
+function openBrowser(url: string): void {
+  if (!/^https?:\/\/\S+$/.test(url)) return; // skip the dev stub's pseudo-URL
+  const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+  try {
+    spawn(cmd, [url], { stdio: "ignore", detached: true, shell: process.platform === "win32" }).unref();
+  } catch {
+    /* no browser — the user can open the URL manually */
+  }
+}
+
 // ── login ────────────────────────────────────────────────────────────────────
 program
   .command("login")
-  .description("Authenticate (GitHub device flow; dev stub locally)")
-  .option("--handle <handle>", "handle to use in dev stub", process.env.USER ?? "dev")
+  .description("Authenticate with GitHub (device flow)")
+  .option("--handle <handle>", "handle to use with the local dev stub", process.env.USER ?? "dev")
   .action(async (opts) => {
     try {
       const start = await api.deviceStart(opts.handle);
-      console.log(`Authorize: ${pc.cyan(start.verification_uri)}  code: ${pc.bold(start.user_code)}`);
-      // Dev stub auto-approves; poll once.
-      const poll = await api.devicePoll(start.device_code);
-      saveSession({ token: poll.session_token, userId: poll.user.id, handle: poll.user.handle });
-      console.log(pc.green(`✓ logged in as ${pc.bold(poll.user.handle)}`));
+      console.log(`\n  Open ${pc.cyan(start.verification_uri)}`);
+      console.log(`  Enter code ${pc.bold(start.user_code)}\n`);
+      openBrowser(start.verification_uri);
+
+      const deadline = Date.now() + start.expires_in * 1000;
+      let interval = Math.max(start.interval, 1);
+      process.stdout.write(pc.dim("  Waiting for authorization"));
+      while (Date.now() < deadline) {
+        // Poll first so the dev stub (which is instantly complete) returns at once.
+        const poll = await api.devicePoll(start.device_code);
+        if (poll.status === "complete") {
+          saveSession({ token: poll.session_token, userId: poll.user.id, handle: poll.user.handle });
+          console.log(pc.green(`\n✓ logged in as ${pc.bold(poll.user.handle)}`));
+          return;
+        }
+        if (poll.status === "slow_down") interval += 5; // GitHub asked us to back off
+        process.stdout.write(pc.dim("."));
+        await sleep(interval * 1000);
+      }
+      console.error(pc.red("\n✗ login timed out — run `ayo login` again"));
+      process.exit(1);
     } catch (err) {
       fail(err);
     }

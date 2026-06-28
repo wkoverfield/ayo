@@ -8,6 +8,8 @@
  */
 
 import type { PublicUser, UserId } from "@ayo-dev/core";
+import { newUserId } from "@ayo-dev/core";
+import type { GithubUser } from "./github.js";
 import type { Env } from "./env.js";
 
 export interface Session {
@@ -36,6 +38,18 @@ export async function getUser(env: Env, userId: UserId): Promise<PublicUser | nu
 
 export async function putUser(env: Env, user: PublicUser): Promise<void> {
   await env.AYO_KV.put(`user:${user.id}`, JSON.stringify(user));
+}
+
+/** Map a GitHub identity to a stable Ayo user (keyed by GitHub numeric id, so a
+ *  handle rename doesn't create a new account). Handle defaults to the login. */
+export async function findOrCreateGithubUser(env: Env, gh: GithubUser): Promise<PublicUser> {
+  const key = `ghuser:${gh.id}`;
+  const existingId = await env.AYO_KV.get(key);
+  const userId = (existingId ?? newUserId()) as UserId;
+  const user: PublicUser = { id: userId, handle: gh.login, name: gh.name ?? gh.login };
+  await putUser(env, user);
+  if (!existingId) await env.AYO_KV.put(key, userId);
+  return user;
 }
 
 export async function issueSession(env: Env, userId: UserId): Promise<string> {
