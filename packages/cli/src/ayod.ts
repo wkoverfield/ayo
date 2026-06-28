@@ -59,7 +59,12 @@ function log(msg: string): void {
   process.stdout.write(line); // discarded by the service (StandardOutPath); shown in foreground
 }
 
+let ownsPidfile = false;
+
 function removePid(): void {
+  // Only ever remove a pidfile THIS process wrote — never another (live) ayod's,
+  // e.g. if a rejected second instance exits (guardSingleInstance).
+  if (!ownsPidfile) return;
   try {
     rmSync(DAEMON_PID_PATH, { force: true });
   } catch {
@@ -218,6 +223,7 @@ mkdirSync(AYO_DIR, { recursive: true }); // a fresh service launch may predate i
 initLog();
 guardSingleInstance();
 writeFileSync(DAEMON_PID_PATH, String(process.pid));
+ownsPidfile = true; // from here on, removePid may delete it
 
 // Clean stop (service stop sends SIGTERM): remove the pidfile and exit 0 so the
 // service manager doesn't treat it as a crash and restart us.

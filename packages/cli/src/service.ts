@@ -120,8 +120,14 @@ class LaunchdService implements DaemonService {
     // caller doesn't print a false "started".
     try {
       execFileSync("launchctl", ["kickstart", "-k", this.target], { stdio: "ignore" });
-    } catch {
-      execFileSync("launchctl", ["bootstrap", this.domain, this.plistPath], { stdio: "ignore" });
+    } catch (kickstartErr) {
+      try {
+        execFileSync("launchctl", ["bootstrap", this.domain, this.plistPath], { stdio: "ignore" });
+      } catch {
+        // bootstrap also failed — surface the kickstart error, which more likely
+        // names the real cause (e.g. the exec'd binary moved).
+        throw kickstartErr;
+      }
     }
   }
 
