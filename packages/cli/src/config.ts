@@ -11,6 +11,10 @@ export const AYO_DIR = join(homedir(), ".ayo");
 const CONFIG_PATH = join(AYO_DIR, "config.json");
 const SESSION_PATH = join(AYO_DIR, "session.json");
 
+/** Daemon runtime files, shared by ayod, the controller, and the OS service. */
+export const DAEMON_PID_PATH = join(AYO_DIR, "daemon.pid");
+export const DAEMON_LOG_PATH = join(AYO_DIR, "ayod.log");
+
 export interface Config {
   /** Relay base URL. Defaults to local dev. */
   relayUrl: string;

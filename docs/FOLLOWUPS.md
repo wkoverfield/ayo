@@ -30,10 +30,14 @@ independent code review of the scaffold + Layer 1.
   Pending: register the OAuth App, set `GITHUB_CLIENT_ID`, and run one real
   browser-authorized login end to end (see `docs/auth-setup.md`). The dev stub
   (`AYO_DEV_AUTH=1`) remains for local testing.
-- **Real daemon install** (#3) — `ayo daemon start` spawns a detached process +
-  pidfile; ADR 0001's target is a launchd/systemd user service.
-- **Windows daemon** — install path is mac/Linux first; the installer should
-  fail gracefully on Windows rather than silently no-op.
+- **Real daemon install** (#3) — ✅ `ayo daemon install` registers a launchd
+  (macOS) / systemd --user (Linux) service; `start`/`stop`/`status` route through
+  it when installed, else the pidfile fallback. launchd path verified end to end
+  on macOS. **systemd path is implemented but NOT yet tested on a real Linux box**
+  — verify install/enable/stop/uninstall there before relying on it.
+- **Windows daemon** — `getService()` returns null on Windows, so install fails
+  gracefully with a message and `ayo daemon start` (foreground) still works.
+  A real Windows service (Startup task / nssm) is future work.
 - **Windows atomic writes** — `writeInbox` uses temp-file + `renameSync`, which
   is atomic on POSIX but can fail with `EPERM`/`EEXIST` on Windows when the
   destination exists. Revisit (e.g. retry, or a write-lock) if Windows is

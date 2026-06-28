@@ -60,7 +60,7 @@ firing tells the sender your machine buzzed — not that you looked.
 npm install -g @ayo-dev/cli
 
 ayo login                       # GitHub device flow
-ayo daemon start                # installs + starts ayod (your receiver)
+ayo daemon install              # install ayod (your receiver) as a login service
 ayo team create "Hack Midwest"  # get a join code
 ayo invite                      # share the code
 
@@ -70,14 +70,18 @@ ayo kenny "demo is cooked"      # → native toast on Kenny's machine
 ayo hooks install               # surface unread Ayos inside Codex & Claude
 ```
 
+`ayo daemon install` registers `ayod` as a **launchd** (macOS) or **systemd
+--user** (Linux) service, so your receiver starts on login and survives reboots.
+Prefer not to install? `ayo daemon start` runs it just for this session.
+
 The daemon is meant to be **boring and inspectable** — never sketchy:
 
 ```bash
 ayo doctor          # environment + connectivity check
-ayo daemon status   # running? connected? last heartbeat?
+ayo daemon status   # running? installed as a service?
 ayo daemon logs
 ayo daemon stop
-ayo uninstall
+ayo daemon uninstall
 ```
 
 ## Packages
