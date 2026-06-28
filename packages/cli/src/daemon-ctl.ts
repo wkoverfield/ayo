@@ -6,7 +6,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { openSync, closeSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { openSync, closeSync, readFileSync, writeFileSync, existsSync, rmSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import pc from "picocolors";
@@ -19,6 +19,29 @@ const LOG_PATH = join(AYO_DIR, "ayod.log");
 /** Synchronous sleep (CLI is one-shot; we briefly block to confirm process death). */
 function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Acquire the start lock. `daemonStart` is fast and fully synchronous, so a lock
+ * older than a few seconds was orphaned by a killed start process and has no
+ * living owner — reclaim it. A genuinely concurrent start holds a fresh lock, so
+ * we don't touch that (reclaiming a fresh lock would reintroduce the double-start
+ * race). Returns the fd, or null if a real concurrent start holds it.
+ */
+function acquireStartLock(): number | null {
+  try {
+    return openSync(LOCK_PATH, "wx");
+  } catch {
+    try {
+      if (Date.now() - statSync(LOCK_PATH).mtimeMs > 10_000) {
+        rmSync(LOCK_PATH, { force: true });
+        return openSync(LOCK_PATH, "wx");
+      }
+    } catch {
+      /* lost the reclaim race to another start — treat as contended */
+    }
+    return null;
+  }
 }
 
 function readPid(): number | null {
@@ -45,10 +68,8 @@ export function isDaemonAlive(): boolean {
 export function daemonStart(): void {
   // Atomic lock: two concurrent starts (e.g. a hook firing while the user runs
   // `ayo daemon start`) must not both spawn a daemon — that double-notifies.
-  let lockFd: number;
-  try {
-    lockFd = openSync(LOCK_PATH, "wx");
-  } catch {
+  const lockFd = acquireStartLock();
+  if (lockFd === null) {
     console.log(pc.dim("ayod start already in progress"));
     return;
   }

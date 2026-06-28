@@ -95,10 +95,11 @@ export class TeamHub implements DurableObject {
     };
     server.send(JSON.stringify(ready));
 
-    // Catch-up: replay still-unread Ayos this user may have missed while their
-    // daemon was offline. At-least-once — the daemon dedupes by id and won't
-    // re-notify ids already in its local inbox. (ADR 0002 reconnect flow.)
-    const missed = await this.unreadFor(userId, handle);
+    // Catch-up: replay only Ayos the machine hasn't confirmed buzzed yet
+    // (sent/delivered, NOT notified/read/resolved) — so an already-notified
+    // message isn't re-pushed on every reconnect. The daemon's id-dedup is a
+    // belt-and-suspenders backstop, not load-bearing. (ADR 0002 reconnect flow.)
+    const missed = await this.unbuzzedFor(userId, handle);
     for (const ayo of missed) server.send(JSON.stringify({ t: "ayo", ayo } satisfies ServerFrame));
 
     return new Response(null, { status: 101, webSocket: client });
@@ -195,7 +196,9 @@ export class TeamHub implements DurableObject {
 
     const ayos: Ayo[] = [];
     for (const ayo of all.values()) {
-      if (!this.addressedTo(ayo, handle)) continue;
+      // Your inbox is what was sent TO you, not what you sent (consistent with
+      // unreadFor / the unread count).
+      if (!this.addressedTo(ayo, handle) || ayo.from.id === userId) continue;
       if (since && ayo.id <= (since as Ayo["id"])) continue;
       if (unreadOnly) {
         const d = await this.getDelivery(ayo.id, userId);
@@ -330,16 +333,30 @@ export class TeamHub implements DurableObject {
     await this.ctx.storage.put(`delivery:${ayoId}:${userId}`, d);
   }
 
-  /** Still-unread Ayos addressed to this user, sorted oldest-first. */
-  private async unreadFor(userId: UserId, handle: Handle): Promise<Ayo[]> {
+  /** Ayos addressed to this user matching `keep(state)`, sorted oldest-first.
+   *  Excludes the user's own sent messages (consistent with handleInbox). */
+  private async filterFor(
+    userId: UserId,
+    handle: Handle,
+    keep: (state: DeliveryState | undefined) => boolean,
+  ): Promise<Ayo[]> {
     const all = await this.ctx.storage.list<Ayo>({ prefix: "msg:" });
     const out: Ayo[] = [];
     for (const ayo of all.values()) {
       if (!this.addressedTo(ayo, handle) || ayo.from.id === userId) continue;
-      const d = await this.getDelivery(ayo.id, userId);
-      if (!d || (d.state !== "read" && d.state !== "resolved")) out.push(ayo);
+      if (keep((await this.getDelivery(ayo.id, userId))?.state)) out.push(ayo);
     }
     return out.sort((a, b) => (a.id < b.id ? -1 : 1));
+  }
+
+  /** Unread = not yet read/resolved. Used for the unread count. */
+  private unreadFor(userId: UserId, handle: Handle): Promise<Ayo[]> {
+    return this.filterFor(userId, handle, (s) => s !== "read" && s !== "resolved");
+  }
+
+  /** Not yet machine-confirmed-buzzed (sent/delivered). Used for reconnect replay. */
+  private unbuzzedFor(userId: UserId, handle: Handle): Promise<Ayo[]> {
+    return this.filterFor(userId, handle, (s) => s === undefined || s === "sent" || s === "delivered");
   }
 
   private async countUnread(userId: UserId, handle: Handle): Promise<number> {

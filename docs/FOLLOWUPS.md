@@ -32,3 +32,7 @@ independent code review of the scaffold + Layer 1.
   pidfile; ADR 0001's target is a launchd/systemd user service.
 - **Windows daemon** — install path is mac/Linux first; the installer should
   fail gracefully on Windows rather than silently no-op.
+- **Windows atomic writes** — `writeInbox` uses temp-file + `renameSync`, which
+  is atomic on POSIX but can fail with `EPERM`/`EEXIST` on Windows when the
+  destination exists. Revisit (e.g. retry, or a write-lock) if Windows is
+  promoted from "fail gracefully" to supported.
