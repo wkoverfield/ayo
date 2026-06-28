@@ -11,11 +11,12 @@
  * controller derives running-ness uniformly via that (see daemon-ctl).
  */
 
-import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
+import { DAEMON_LOG_PATH } from "./config.js";
 
 function ayodPath(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "ayod.js");
@@ -28,6 +29,17 @@ function tryRun(cmd: string, args: string[]): void {
   } catch {
     /* ignore — e.g. "already loaded" / "not loaded" */
   }
+}
+
+/** Escape for an XML text node (plist values). */
+function xml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Quote a path for a systemd ExecStart token (handles spaces). systemd honors
+ *  double-quoted, backslash-escaped tokens. */
+function sd(s: string): string {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 export interface DaemonService {
@@ -47,12 +59,23 @@ const LAUNCHD_LABEL = "dev.ayo.daemon";
 class LaunchdService implements DaemonService {
   readonly kind = "launchd";
   private plistPath = join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
-  private domain = `gui/${process.getuid?.() ?? 0}`;
-  private target = `${this.domain}/${LAUNCHD_LABEL}`;
+
+  private get domain(): string {
+    const uid = process.getuid?.();
+    // Only constructed on macOS, where getuid always exists. Fail loudly rather
+    // than silently bootstrapping into root's domain (gui/0).
+    if (uid == null) throw new Error("cannot determine uid for launchd domain");
+    return `gui/${uid}`;
+  }
+  private get target(): string {
+    return `${this.domain}/${LAUNCHD_LABEL}`;
+  }
 
   private plist(): string {
     // KeepAlive only on crash (SuccessfulExit=false): a clean SIGTERM stop won't
     // be auto-restarted, but a crash will. RunAtLoad starts it on login/load.
+    // ThrottleInterval avoids a tight crash-restart loop. Std{Out,Err}Path make
+    // a crash traceback visible via `ayo daemon logs`.
     return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -60,13 +83,16 @@ class LaunchdService implements DaemonService {
   <key>Label</key><string>${LAUNCHD_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${process.execPath}</string>
-    <string>${ayodPath()}</string>
+    <string>${xml(process.execPath)}</string>
+    <string>${xml(ayodPath())}</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
   <dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>5</integer>
   <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>${xml(DAEMON_LOG_PATH)}</string>
 </dict>
 </plist>
 `;
@@ -76,7 +102,12 @@ class LaunchdService implements DaemonService {
     mkdirSync(dirname(this.plistPath), { recursive: true });
     writeFileSync(this.plistPath, this.plist());
     tryRun("launchctl", ["bootout", this.target]); // in case an old one is loaded
-    execFileSync("launchctl", ["bootstrap", this.domain, this.plistPath], { stdio: "ignore" });
+    try {
+      execFileSync("launchctl", ["bootstrap", this.domain, this.plistPath], { stdio: "ignore" });
+    } catch (err) {
+      rmSync(this.plistPath, { force: true }); // don't leave a broken half-install
+      throw err;
+    }
   }
 
   uninstall(): void {
@@ -85,11 +116,12 @@ class LaunchdService implements DaemonService {
   }
 
   start(): void {
-    // kickstart if loaded; bootstrap if not.
+    // kickstart if loaded; bootstrap if not. Let a real failure propagate so the
+    // caller doesn't print a false "started".
     try {
       execFileSync("launchctl", ["kickstart", "-k", this.target], { stdio: "ignore" });
     } catch {
-      tryRun("launchctl", ["bootstrap", this.domain, this.plistPath]);
+      execFileSync("launchctl", ["bootstrap", this.domain, this.plistPath], { stdio: "ignore" });
     }
   }
 
@@ -112,12 +144,14 @@ class SystemdService implements DaemonService {
   private unitPath = join(homedir(), ".config", "systemd", "user", SYSTEMD_UNIT);
 
   private unit(): string {
+    // Quote the paths: systemd splits ExecStart on whitespace, so an unquoted
+    // path with a space (e.g. a volta/nvm dir) would break the service.
     return `[Unit]
 Description=Ayo daemon (receives Ayos)
 After=network-online.target
 
 [Service]
-ExecStart=${process.execPath} ${ayodPath()}
+ExecStart=${sd(process.execPath)} ${sd(ayodPath())}
 Restart=on-failure
 RestartSec=5
 
@@ -129,7 +163,9 @@ WantedBy=default.target
   install(): void {
     mkdirSync(dirname(this.unitPath), { recursive: true });
     writeFileSync(this.unitPath, this.unit());
-    tryRun("systemctl", ["--user", "daemon-reload"]);
+    // Surface a daemon-reload failure (dbus/systemd unavailable) clearly rather
+    // than letting `enable --now` fail with a confusing downstream error.
+    execFileSync("systemctl", ["--user", "daemon-reload"], { stdio: "ignore" });
     execFileSync("systemctl", ["--user", "enable", "--now", SYSTEMD_UNIT], { stdio: "ignore" });
   }
 

@@ -73,6 +73,7 @@ export function daemonUninstall(): void {
   const svc = getService();
   if (svc?.isInstalled()) {
     svc.uninstall();
+    for (let i = 0; i < 20 && isDaemonAlive(); i++) sleepSync(50); // let it exit cleanly
     rmSync(DAEMON_PID_PATH, { force: true });
     console.log(pc.green(`✓ ayod ${svc.kind} service removed`));
     return;
@@ -135,7 +136,11 @@ export function daemonStop(): void {
     svc.stop();
     // Give the daemon a moment to handle SIGTERM and remove its pidfile.
     for (let i = 0; i < 10 && isDaemonAlive(); i++) sleepSync(50);
-    console.log(pc.green(`✓ ayod stopped`) + pc.dim(` (${svc.kind} service; still installed)`));
+    if (isDaemonAlive()) {
+      console.log(pc.yellow("! ayod is taking a moment to stop") + pc.dim(` (${svc.kind} service)`));
+    } else {
+      console.log(pc.green(`✓ ayod stopped`) + pc.dim(` (${svc.kind} service; still installed)`));
+    }
     return;
   }
 

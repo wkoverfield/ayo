@@ -38,6 +38,12 @@ independent code review of the scaffold + Layer 1.
 - **Windows daemon** — `getService()` returns null on Windows, so install fails
   gracefully with a message and `ayo daemon start` (foreground) still works.
   A real Windows service (Startup task / nssm) is future work.
+- **systemd lingering** — `WantedBy=default.target` starts ayod on user login.
+  On headless Linux / servers without a login session, `loginctl enable-linger
+  $USER` is needed for boot-time start; the installer could offer this.
+- **Daemon log I/O** — `ayod` logs via synchronous `appendFileSync` per line.
+  Fine at hackathon message rates; if a future high-frequency stream lands,
+  switch to a buffered/async writer. (In-flight rotation at ~1MB is implemented.)
 - **Windows atomic writes** — `writeInbox` uses temp-file + `renameSync`, which
   is atomic on POSIX but can fail with `EPERM`/`EEXIST` on Windows when the
   destination exists. Revisit (e.g. retry, or a write-lock) if Windows is
