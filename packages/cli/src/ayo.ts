@@ -122,7 +122,9 @@ program
         if (a.context?.diffStat) console.log(pc.dim(`   ${a.context.diffStat}`));
       }
       // Viewing the inbox is an explicit human action -> mark read.
-      await Promise.all(ayos.map((a) => api.markRead(s, a.id).catch(() => {})));
+      const results = await Promise.allSettled(ayos.map((a) => api.markRead(s, a.id)));
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed) console.error(pc.yellow(`⚠ ${failed} read receipt(s) didn't reach the relay`));
     } catch (err) {
       fail(err);
     }
@@ -177,11 +179,11 @@ hooks
 program
   .command("agent-context", { hidden: true })
   .description("Print unread Ayos for agent context injection (Claude hooks)")
-  .action(() => surfaceUnread({ print: true }));
+  .action(() => surfaceUnread({ surface: "claude", print: true }));
 program
   .command("notify-check", { hidden: true })
   .description("Toast fallback for unread Ayos (Codex notify)")
-  .action(() => surfaceUnread({ print: false }));
+  .action(() => surfaceUnread({ surface: "codex", print: false }));
 
 // ── doctor ───────────────────────────────────────────────────────────────────
 program

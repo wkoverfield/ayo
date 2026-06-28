@@ -18,10 +18,18 @@
 import type { Ayo } from "@ayo-dev/core";
 import { loadConfig, loadSession } from "./config.js";
 import { isDaemonAlive } from "./daemon-ctl.js";
-import { getLastSurfaced, loadInbox, setLastSurfaced, upsertInbox } from "./inbox-store.js";
+import {
+  type AgentSurface,
+  getLastSurfaced,
+  loadInbox,
+  setLastSurfaced,
+  upsertInbox,
+} from "./inbox-store.js";
 import { notifyAyo } from "./notify.js";
 
 interface SurfaceOpts {
+  /** Which agent is asking — each keeps its own dedup marker. */
+  surface: AgentSurface;
   /** Print fresh Ayos to stdout for model injection (Claude). Off for Codex. */
   print: boolean;
 }
@@ -41,14 +49,14 @@ export async function surfaceUnread(opts: SurfaceOpts): Promise<void> {
       .ayos.filter((a) => a.from.handle !== session.handle)
       .sort((a, b) => (a.id < b.id ? -1 : 1));
 
-    const last = getLastSurfaced();
+    const last = getLastSurfaced(opts.surface);
     const fresh = last ? mine.filter((a) => a.id > last) : mine;
     if (fresh.length === 0) return;
 
     if (opts.print) process.stdout.write(formatForAgent(fresh));
     if (!daemonAlive) for (const a of fresh) notifyAyo(a); // self-healing fallback
 
-    setLastSurfaced(mine[mine.length - 1]!.id);
+    setLastSurfaced(opts.surface, mine[mine.length - 1]!.id);
   } catch {
     // Never break the agent. Swallow everything.
   }

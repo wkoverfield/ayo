@@ -23,8 +23,10 @@ export type ApiErrorCode =
   | "team_not_found"
   | "not_a_member"
   | "unknown_recipient"
+  | "bad_request"
   | "rate_limited"
-  | "payload_too_large";
+  | "payload_too_large"
+  | "internal_error";
 
 // ── Auth: GitHub device flow ───────────────────────────────────────────────
 

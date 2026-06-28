@@ -23,10 +23,10 @@ export interface Membership {
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no ambiguous chars
 
 function joinCode(): string {
+  // A join code grants team membership — use CSPRNG, not Math.random().
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
   let s = "";
-  for (let i = 0; i < 6; i++) {
-    s += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
-  }
+  for (let i = 0; i < 6; i++) s += CODE_ALPHABET[bytes[i]! % CODE_ALPHABET.length];
   return s;
 }
 

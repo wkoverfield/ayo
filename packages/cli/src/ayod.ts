@@ -9,12 +9,12 @@
 import WebSocket from "ws";
 import type { ServerFrame, AckFrame } from "@ayo-dev/core";
 import { loadConfig, requireSession } from "./config.js";
-import { upsertInbox } from "./inbox-store.js";
+import { loadInbox, upsertInbox } from "./inbox-store.js";
 import { notifyAyo } from "./notify.js";
 
-function wsUrl(relayUrl: string, teamId: string, token: string): string {
+function wsUrl(relayUrl: string, teamId: string): string {
   const base = relayUrl.replace(/^http/, "ws");
-  return `${base}/v1/teams/${teamId}/stream?token=${encodeURIComponent(token)}`;
+  return `${base}/v1/teams/${teamId}/stream`;
 }
 
 function log(msg: string): void {
@@ -32,7 +32,11 @@ function connect(): void {
 
   let backoff = 1000;
   const open = () => {
-    const ws = new WebSocket(wsUrl(cfg.relayUrl, teamId, session.token));
+    // Token in the Authorization header, NOT the URL — query strings leak into
+    // access logs (ADR 0002).
+    const ws = new WebSocket(wsUrl(cfg.relayUrl, teamId), {
+      headers: { authorization: `Bearer ${session.token}` },
+    });
 
     ws.on("open", () => {
       backoff = 1000;
@@ -72,11 +76,22 @@ function handleFrame(ws: WebSocket, frame: ServerFrame): void {
       break;
     case "ayo": {
       const ayo = frame.ayo;
+      // Already seen (e.g. replayed on reconnect)? Re-ack delivery, but don't
+      // re-notify — that would double-buzz on every reconnect.
+      const known = loadInbox().ayos.some((a) => a.id === ayo.id);
       upsertInbox(ayo);
       ack(ws, ayo.id, "delivered"); // machine has it
-      notifyAyo(ayo);
-      ack(ws, ayo.id, "notified"); // the human's machine buzzed (NOT read)
-      log(`ayo ${ayo.id} from ${ayo.from.handle}`);
+      if (!known) {
+        try {
+          notifyAyo(ayo);
+          ack(ws, ayo.id, "notified"); // the human's machine buzzed (NOT read)
+        } catch (err) {
+          // Notification failed — do NOT ack `notified` (the human wasn't
+          // buzzed) and do NOT crash the daemon.
+          log(`notify failed: ${(err as Error).message}`);
+        }
+      }
+      log(`ayo ${ayo.id} from ${ayo.from.handle}${known ? " (replayed)" : ""}`);
       break;
     }
     case "ayo:update":

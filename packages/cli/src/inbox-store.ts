@@ -5,7 +5,7 @@
  */
 
 import { join } from "node:path";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import type { Ayo } from "@ayo-dev/core";
 import { AYO_DIR } from "./config.js";
 
@@ -27,7 +27,11 @@ export function loadInbox(): InboxFile {
 }
 
 export function writeInbox(file: InboxFile): void {
-  writeFileSync(INBOX_PATH, JSON.stringify(file, null, 2));
+  // Write-then-rename so a concurrent reader never sees a half-written file
+  // (rename is atomic on POSIX). The daemon and the agent hook can both write.
+  const tmp = `${INBOX_PATH}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(file, null, 2));
+  renameSync(tmp, INBOX_PATH);
 }
 
 /** Add an Ayo if not already present (dedupe by id). */
@@ -38,20 +42,30 @@ export function upsertInbox(ayo: Ayo): void {
   writeInbox(inbox);
 }
 
+/** Each agent surface keeps its OWN marker, so Claude and Codex can't starve
+ *  each other of context by racing on a single shared cursor. */
+export type AgentSurface = "claude" | "codex";
+
 interface AgentState {
-  /** Highest Ayo id already surfaced to an agent. */
-  lastSurfacedAyoId?: string;
+  /** Highest Ayo id already surfaced, per agent surface. */
+  markers?: Partial<Record<AgentSurface, string>>;
 }
 
-export function getLastSurfaced(): string | undefined {
-  if (!existsSync(AGENT_STATE_PATH)) return undefined;
+function loadAgentState(): AgentState {
+  if (!existsSync(AGENT_STATE_PATH)) return {};
   try {
-    return (JSON.parse(readFileSync(AGENT_STATE_PATH, "utf8")) as AgentState).lastSurfacedAyoId;
+    return JSON.parse(readFileSync(AGENT_STATE_PATH, "utf8")) as AgentState;
   } catch {
-    return undefined;
+    return {};
   }
 }
 
-export function setLastSurfaced(id: string): void {
-  writeFileSync(AGENT_STATE_PATH, JSON.stringify({ lastSurfacedAyoId: id } satisfies AgentState));
+export function getLastSurfaced(surface: AgentSurface): string | undefined {
+  return loadAgentState().markers?.[surface];
+}
+
+export function setLastSurfaced(surface: AgentSurface, id: string): void {
+  const state = loadAgentState();
+  state.markers = { ...state.markers, [surface]: id };
+  writeFileSync(AGENT_STATE_PATH, JSON.stringify(state));
 }
