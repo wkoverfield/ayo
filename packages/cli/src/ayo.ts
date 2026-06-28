@@ -17,6 +17,8 @@ import {
 import { api, RelayError } from "./client.js";
 import { captureContext } from "./context.js";
 import {
+  daemonInstall,
+  daemonUninstall,
   daemonStart,
   daemonStatus,
   daemonStop,
@@ -202,8 +204,16 @@ program
 
 // ── daemon ───────────────────────────────────────────────────────────────────
 const daemon = program.command("daemon").description("Manage the ayod receiver");
-daemon.command("start").description("Start ayod in the background").action(() => daemonStart());
-daemon.command("status").description("Is ayod running & connected?").action(() => daemonStatus());
+daemon
+  .command("install")
+  .description("Install ayod as a login service (survives reboots)")
+  .action(() => daemonInstall());
+daemon
+  .command("uninstall")
+  .description("Remove the ayod login service")
+  .action(() => daemonUninstall());
+daemon.command("start").description("Start ayod").action(() => daemonStart());
+daemon.command("status").description("Is ayod running & installed?").action(() => daemonStatus());
 daemon.command("stop").description("Stop ayod").action(() => daemonStop());
 daemon.command("logs").description("Tail ayod logs").action(() => daemonLogs());
 
