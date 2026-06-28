@@ -1,0 +1,200 @@
+#!/usr/bin/env node
+/**
+ * `ayo` — the one-shot CLI. Sends over HTTP (stateless), reads the inbox, and
+ * manages the daemon. Receiving is the daemon's job (ADR 0001/0002).
+ */
+
+import { Command } from "commander";
+import pc from "picocolors";
+import {
+  loadConfig,
+  saveConfig,
+  saveSession,
+  requireSession,
+  resolveHandle,
+} from "./config.js";
+import { api, RelayError } from "./client.js";
+import { captureContext } from "./context.js";
+import {
+  daemonStart,
+  daemonStatus,
+  daemonStop,
+  daemonLogs,
+} from "./daemon-ctl.js";
+
+const program = new Command();
+program.name("ayo").description("Ping your teammates from inside Codex and Claude.").version("0.0.0");
+
+function fail(err: unknown): never {
+  if (err instanceof RelayError) console.error(pc.red(`✗ ${err.code}: ${err.message}`));
+  else console.error(pc.red(`✗ ${(err as Error).message}`));
+  process.exit(1);
+}
+
+// ── login ────────────────────────────────────────────────────────────────────
+program
+  .command("login")
+  .description("Authenticate (GitHub device flow; dev stub locally)")
+  .option("--handle <handle>", "handle to use in dev stub", process.env.USER ?? "dev")
+  .action(async (opts) => {
+    try {
+      const start = await api.deviceStart(opts.handle);
+      console.log(`Authorize: ${pc.cyan(start.verification_uri)}  code: ${pc.bold(start.user_code)}`);
+      // Dev stub auto-approves; poll once.
+      const poll = await api.devicePoll(start.device_code);
+      saveSession({ token: poll.session_token, userId: poll.user.id, handle: poll.user.handle });
+      console.log(pc.green(`✓ logged in as ${pc.bold(poll.user.handle)}`));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+// ── team ───────────────────────────────────────────────────────────────────
+const team = program.command("team").description("Manage teams");
+team
+  .command("create <name>")
+  .description("Create a team and get a join code")
+  .action(async (name: string) => {
+    try {
+      const s = requireSession();
+      const res = await api.createTeam(s, name);
+      const cfg = loadConfig();
+      saveConfig({ ...cfg, activeTeamId: res.id });
+      console.log(pc.green(`✓ created ${pc.bold(name)}`));
+      console.log(`  join code: ${pc.bold(pc.cyan(res.joinCode))}  →  share with \`ayo join ${res.joinCode}\``);
+    } catch (err) {
+      fail(err);
+    }
+  });
+team
+  .command("status")
+  .description("Show team roster + presence")
+  .action(async () => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team.");
+      const { members } = await api.members(s, cfg.activeTeamId);
+      for (const m of members) {
+        const dot = m.online ? pc.green("●") : pc.dim("○");
+        const note = m.statusText ? pc.dim(` — ${m.statusText}`) : "";
+        console.log(`${dot} ${pc.bold(m.handle)} ${pc.dim(`(${m.status})`)}${note}`);
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+// ── join ─────────────────────────────────────────────────────────────────────
+program
+  .command("join <code>")
+  .description("Join a team by code")
+  .action(async (code: string) => {
+    try {
+      const s = requireSession();
+      const res = await api.joinTeam(s, code);
+      saveConfig({ ...loadConfig(), activeTeamId: res.id });
+      console.log(pc.green(`✓ joined ${pc.bold(res.name)}`));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+// ── inbox ────────────────────────────────────────────────────────────────────
+program
+  .command("inbox")
+  .description("Read your Ayos")
+  .option("--unread", "only unread", false)
+  .option("--json", "raw JSON for agents", false)
+  .action(async (opts) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team.");
+      const { ayos } = await api.inbox(s, cfg.activeTeamId, undefined, opts.unread);
+      if (opts.json) return void console.log(JSON.stringify(ayos, null, 2));
+      if (!ayos.length) return void console.log(pc.dim("inbox zero ✨"));
+      for (const a of ayos) {
+        const where = a.context?.branch ? pc.dim(` ${a.context.repo}@${a.context.branch}`) : "";
+        console.log(`${pc.bold(pc.cyan(a.from.handle))}${where}: ${a.body}`);
+        if (a.context?.diffStat) console.log(pc.dim(`   ${a.context.diffStat}`));
+      }
+      // Viewing the inbox is an explicit human action -> mark read.
+      await Promise.all(ayos.map((a) => api.markRead(s, a.id).catch(() => {})));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+// ── status ───────────────────────────────────────────────────────────────────
+program
+  .command("status <text>")
+  .description('Set your status, e.g. ayo status "locked in on demo"')
+  .option("--dnd", "do not disturb", false)
+  .action(async (text: string, opts) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team.");
+      await api.setStatus(s, cfg.activeTeamId, { status: opts.dnd ? "dnd" : "heads-down", statusText: text });
+      console.log(pc.green(`✓ status set`));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+// ── daemon ───────────────────────────────────────────────────────────────────
+const daemon = program.command("daemon").description("Manage the ayod receiver");
+daemon.command("start").description("Start ayod in the background").action(() => daemonStart());
+daemon.command("status").description("Is ayod running & connected?").action(() => daemonStatus());
+daemon.command("stop").description("Stop ayod").action(() => daemonStop());
+daemon.command("logs").description("Tail ayod logs").action(() => daemonLogs());
+
+// ── doctor ───────────────────────────────────────────────────────────────────
+program
+  .command("doctor")
+  .description("Check environment + connectivity")
+  .action(async () => {
+    const cfg = loadConfig();
+    const s = requireSession();
+    console.log(`relay:   ${cfg.relayUrl}`);
+    console.log(`session: ${s ? pc.green(`logged in as ${s.handle}`) : pc.red("none")}`);
+    console.log(`team:    ${cfg.activeTeamId ?? pc.dim("none")}`);
+    try {
+      await api.me(s);
+      console.log(pc.green("✓ relay reachable"));
+    } catch (err) {
+      console.log(pc.red(`✗ relay unreachable: ${(err as Error).message}`));
+    }
+  });
+
+// ── default: send (ayo <handle|all> <message...>) ────────────────────────────
+program
+  .command("send <target> [message...]", { isDefault: true, hidden: true })
+  .description("Send an Ayo: ayo <handle> <message>  (target `all` broadcasts)")
+  .option("--urgent", "urgent ping", false)
+  .option("--with-diff", "attach full git diff", false)
+  .action(async (target: string, message: string[], opts) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      const body = message.join(" ");
+      if (!body) return console.log("Nothing to send. `ayo <handle> <message>`");
+      const broadcast = ["all", "team", "everyone"].includes(target);
+      const to = broadcast ? ["*"] : [resolveHandle(cfg, target)];
+      const res = await api.send(s, cfg.activeTeamId, {
+        to,
+        body,
+        urgency: opts.urgent ? "urgent" : "normal",
+        context: captureContext({ withDiff: opts.withDiff }),
+      });
+      const live = res.deliveredTo.length;
+      const queued = res.queuedFor.length;
+      console.log(pc.green(`✓ ayo sent`) + pc.dim(` (${live} live, ${queued} queued)`));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program.parseAsync();

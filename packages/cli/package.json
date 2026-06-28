@@ -1,0 +1,30 @@
+{
+  "name": "@ayo-dev/cli",
+  "version": "0.0.0",
+  "description": "Ping your teammates from inside Codex and Claude. The ayo command + the ayod daemon.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "ayo": "./dist/ayo.js",
+    "ayod": "./dist/ayod.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "@ayo-dev/core": "workspace:*",
+    "commander": "^12.1.0",
+    "node-notifier": "^10.0.1",
+    "picocolors": "^1.1.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/node-notifier": "^8.0.5",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.2"
+  }
+}

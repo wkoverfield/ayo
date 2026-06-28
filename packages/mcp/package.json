@@ -1,0 +1,24 @@
+{
+  "name": "@ayo-dev/mcp",
+  "version": "0.0.0",
+  "description": "Ayo MCP server — send_ayo, read_inbox, create_handoff, share_context for Codex & Claude.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "ayo-mcp": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ayo-dev/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.13.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}

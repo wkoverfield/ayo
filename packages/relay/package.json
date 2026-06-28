@@ -1,0 +1,22 @@
+{
+  "name": "@ayo-dev/relay",
+  "version": "0.0.0",
+  "description": "Ayo realtime relay — Cloudflare Worker + one Durable Object per team.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ayo-dev/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.95.0"
+  }
+}
