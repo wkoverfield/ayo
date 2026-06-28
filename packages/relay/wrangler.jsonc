@@ -24,8 +24,8 @@
 
   // Secrets are set via `wrangler secret put` (NOT here — vars in this file are
   // deployed and public):
-  //   GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET  — real device flow (TODO)
-  //   INTERNAL_SECRET                          — Worker->DO request authenticity
+  //   GITHUB_CLIENT_ID   — real device flow (no client secret needed)
+  //   INTERNAL_SECRET    — Worker->DO request authenticity
   // Local dev reads these from `.dev.vars` (gitignored; see .dev.vars.example).
   // The dev auth stub activates ONLY when AYO_DEV_AUTH="1" — never set in prod.
 }

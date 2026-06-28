@@ -39,10 +39,11 @@ export async function githubDeviceStart(clientId: string): Promise<GithubDeviceS
 }
 
 /** Either an access token, or a GitHub error code (authorization_pending,
- *  slow_down, expired_token, access_denied, device_flow_disabled, ...). */
+ *  slow_down, expired_token, access_denied, device_flow_disabled, ...). On
+ *  `slow_down`, GitHub supplies the new minimum interval to honour. */
 export type GithubPollResult =
   | { ok: true; accessToken: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; interval?: number };
 
 export async function githubDevicePoll(
   clientId: string,
@@ -57,9 +58,10 @@ export async function githubDevicePoll(
       grant_type: "urn:ietf:params:oauth:grant-type:device_code",
     }),
   });
-  const data = (await res.json()) as { access_token?: string; error?: string };
+  // The token endpoint returns HTTP 200 even for the pending/slow_down errors.
+  const data = (await res.json()) as { access_token?: string; error?: string; interval?: number };
   if (data.access_token) return { ok: true, accessToken: data.access_token };
-  return { ok: false, error: data.error ?? "unknown_error" };
+  return { ok: false, error: data.error ?? "unknown_error", interval: data.interval };
 }
 
 export interface GithubUser {
@@ -77,5 +79,11 @@ export async function githubGetUser(accessToken: string): Promise<GithubUser> {
     },
   });
   if (!res.ok) throw new Error(`github /user returned ${res.status}`);
-  return (await res.json()) as GithubUser;
+  const user = (await res.json()) as GithubUser;
+  // `id` is the stable identity key — never trust a payload missing it (would
+  // otherwise merge unrelated users under `ghuser:undefined`).
+  if (typeof user.id !== "number" || typeof user.login !== "string" || !user.login) {
+    throw new Error("github /user returned an unexpected shape");
+  }
+  return user;
 }

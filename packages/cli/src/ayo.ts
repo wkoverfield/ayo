@@ -36,12 +36,19 @@ function fail(err: unknown): never {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Best-effort: open the verification URL in the user's browser. */
+/** Best-effort: open the verification URL in the user's browser. The URL comes
+ *  from the relay and is handed to a subprocess, so: only plain https URLs, and
+ *  NEVER `shell: true` (which would let URL metacharacters be interpreted). */
 function openBrowser(url: string): void {
-  if (!/^https?:\/\/\S+$/.test(url)) return; // skip the dev stub's pseudo-URL
-  const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+  if (!/^https:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/.test(url)) return; // also skips the dev stub's spaced pseudo-URL
+  const [cmd, args]: readonly [string, string[]] =
+    process.platform === "darwin"
+      ? ["open", [url]]
+      : process.platform === "win32"
+        ? ["cmd.exe", ["/c", "start", "", url]]
+        : ["xdg-open", [url]];
   try {
-    spawn(cmd, [url], { stdio: "ignore", detached: true, shell: process.platform === "win32" }).unref();
+    spawn(cmd, args, { stdio: "ignore", detached: true, shell: false }).unref();
   } catch {
     /* no browser — the user can open the URL manually */
   }
@@ -59,8 +66,13 @@ program
       console.log(`  Enter code ${pc.bold(start.user_code)}\n`);
       openBrowser(start.verification_uri);
 
-      const deadline = Date.now() + start.expires_in * 1000;
-      let interval = Math.max(start.interval, 1);
+      // Coerce defensively: a malformed relay response must not produce NaN
+      // (NaN deadline exits instantly; NaN interval spins setTimeout at 0ms).
+      const expiresIn = Number(start.expires_in);
+      const deadline = Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 900) * 1000;
+      const startInterval = Number(start.interval);
+      let interval = Number.isFinite(startInterval) && startInterval > 0 ? startInterval : 5;
+
       process.stdout.write(pc.dim("  Waiting for authorization"));
       while (Date.now() < deadline) {
         // Poll first so the dev stub (which is instantly complete) returns at once.
@@ -70,13 +82,24 @@ program
           console.log(pc.green(`\n✓ logged in as ${pc.bold(poll.user.handle)}`));
           return;
         }
-        if (poll.status === "slow_down") interval += 5; // GitHub asked us to back off
+        if (poll.status === "slow_down") {
+          // Honor GitHub's new interval (forwarded by the relay), capped so a
+          // repeated slow_down can't ratchet the wait to absurd lengths.
+          const next = Number(poll.interval);
+          interval = Math.min(Number.isFinite(next) && next > 0 ? next : interval + 5, 60);
+        }
         process.stdout.write(pc.dim("."));
         await sleep(interval * 1000);
       }
       console.error(pc.red("\n✗ login timed out — run `ayo login` again"));
       process.exit(1);
     } catch (err) {
+      // Terminal device-flow errors carry a friendly message from the relay —
+      // show it without the noisy `unauthorized:` code prefix.
+      if (err instanceof RelayError) {
+        console.error(pc.red(`\n✗ ${err.message}`));
+        process.exit(1);
+      }
       fail(err);
     }
   });

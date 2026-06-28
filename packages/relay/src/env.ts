@@ -3,8 +3,8 @@ import type { ApiErrorBody, ApiErrorCode } from "@ayo-dev/core";
 export interface Env {
   TEAM: DurableObjectNamespace;
   AYO_KV: KVNamespace;
+  /** GitHub OAuth App client id. The device flow needs no client secret. */
   GITHUB_CLIENT_ID?: string;
-  GITHUB_CLIENT_SECRET?: string;
   /** Must be "1" to enable the no-GitHub dev auth stub. Never set in prod. */
   AYO_DEV_AUTH?: string;
   /** Shared secret the Worker stamps on DO sub-requests so the DO can reject

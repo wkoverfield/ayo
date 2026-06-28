@@ -155,6 +155,22 @@ async function forwardToTeam(
   return stub.fetch(new Request(target, { method: req.method, headers, body: req.body }));
 }
 
+/** Human-friendly text for GitHub's terminal device-flow error codes. */
+function githubErrorMessage(error: string): string {
+  switch (error) {
+    case "expired_token":
+      return "The login code expired — run `ayo login` again.";
+    case "access_denied":
+      return "Authorization was denied.";
+    case "device_flow_disabled":
+      return "Device flow is not enabled on the relay's GitHub app.";
+    case "incorrect_client_credentials":
+      return "The relay's GitHub client ID is misconfigured.";
+    default:
+      return `GitHub device flow error: ${error}`;
+  }
+}
+
 // ── Auth: GitHub device flow (dev stub when GitHub is unconfigured) ───────────
 
 async function handleDeviceStart(req: Request, env: Env): Promise<Response> {
@@ -188,7 +204,11 @@ async function handleDeviceStart(req: Request, env: Env): Promise<Response> {
 }
 
 async function handleDevicePoll(req: Request, env: Env): Promise<Response> {
-  const { device_code } = (await req.json()) as { device_code: string };
+  const body = (await req.json().catch(() => null)) as { device_code?: string } | null;
+  if (!body || typeof body.device_code !== "string" || !body.device_code) {
+    return apiError("bad_request", "device_code is required.");
+  }
+  const device_code = body.device_code;
 
   if (devStubEnabled(env)) {
     const handle = await env.AYO_KV.get(`device:${device_code}`);
@@ -210,9 +230,11 @@ async function handleDevicePoll(req: Request, env: Env): Promise<Response> {
   if (!poll.ok) {
     // Still waiting / told to back off — the CLI keeps polling.
     if (poll.error === "authorization_pending") return json({ status: "pending" } satisfies DevicePollResponse);
-    if (poll.error === "slow_down") return json({ status: "slow_down", interval: 5 } satisfies DevicePollResponse);
+    if (poll.error === "slow_down") {
+      return json({ status: "slow_down", interval: poll.interval ?? 5 } satisfies DevicePollResponse);
+    }
     // Terminal: expired_token, access_denied, device_flow_disabled, ...
-    return apiError("unauthorized", `Device flow failed: ${poll.error}`);
+    return apiError("unauthorized", githubErrorMessage(poll.error));
   }
 
   const gh = await githubGetUser(poll.accessToken);

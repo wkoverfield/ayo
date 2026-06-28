@@ -41,14 +41,24 @@ export async function putUser(env: Env, user: PublicUser): Promise<void> {
 }
 
 /** Map a GitHub identity to a stable Ayo user (keyed by GitHub numeric id, so a
- *  handle rename doesn't create a new account). Handle defaults to the login. */
+ *  handle rename doesn't create a new account). On first login the handle
+ *  defaults to the GitHub login; on later logins we preserve the existing
+ *  handle (so a future `ayo alias` isn't clobbered) and only refresh the name. */
 export async function findOrCreateGithubUser(env: Env, gh: GithubUser): Promise<PublicUser> {
   const key = `ghuser:${gh.id}`;
   const existingId = await env.AYO_KV.get(key);
-  const userId = (existingId ?? newUserId()) as UserId;
+  if (existingId) {
+    const existing = await getUser(env, existingId as UserId);
+    if (existing) {
+      const refreshed: PublicUser = { ...existing, name: gh.name ?? existing.name };
+      await putUser(env, refreshed);
+      return refreshed;
+    }
+  }
+  const userId = newUserId() as UserId;
   const user: PublicUser = { id: userId, handle: gh.login, name: gh.name ?? gh.login };
   await putUser(env, user);
-  if (!existingId) await env.AYO_KV.put(key, userId);
+  await env.AYO_KV.put(key, userId);
   return user;
 }
 
