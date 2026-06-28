@@ -44,6 +44,12 @@ export async function issueSession(env: Env, userId: UserId): Promise<string> {
   return token;
 }
 
+/**
+ * The no-GitHub dev auth stub is enabled ONLY when AYO_DEV_AUTH === "1" (set via
+ * `.dev.vars` locally). It must never be gated on the mere ABSENCE of a secret —
+ * a prod deploy that forgets `wrangler secret put GITHUB_CLIENT_ID` must fail
+ * closed, not silently become a zero-auth instance.
+ */
 export function devStubEnabled(env: Env): boolean {
-  return !env.GITHUB_CLIENT_ID;
+  return env.AYO_DEV_AUTH === "1";
 }

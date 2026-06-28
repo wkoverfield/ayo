@@ -56,6 +56,11 @@ function readJson<T>(path: string): T | null {
 
 function installClaude(): "installed" | "already" | "error" {
   try {
+    // Distinguish absent (safe to create) from present-but-malformed (must NOT
+    // overwrite — that would clobber the user's whole settings file).
+    if (existsSync(CLAUDE_SETTINGS) && readJson<ClaudeSettings>(CLAUDE_SETTINGS) === null) {
+      return "error";
+    }
     const settings: ClaudeSettings = readJson<ClaudeSettings>(CLAUDE_SETTINGS) ?? {};
     settings.hooks ??= {};
     let changed = false;
@@ -104,9 +109,15 @@ function claudeInstalled(): boolean {
 
 // ── Codex ────────────────────────────────────────────────────────────────────
 
-/** TOML literal (single-quoted) array — no escaping, safe for filesystem paths. */
+/** A TOML basic (double-quoted) string with backslashes/quotes escaped. Single-
+ *  quoted TOML literals can't represent a `'` in a path or Windows backslashes,
+ *  so we must use basic strings here. */
+function tomlString(s: string): string {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
 function codexNotifyLine(): string {
-  return `notify = ['${process.execPath}', '${ayoBin()}', 'notify-check']`;
+  return `notify = [${tomlString(process.execPath)}, ${tomlString(ayoBin())}, "notify-check"]`;
 }
 
 function codexHasOurNotify(text: string): boolean {
@@ -134,7 +145,8 @@ function uninstallCodex(): "removed" | "absent" {
   const cleaned = text
     .split("\n")
     .filter((l) => !/^\s*notify\s*=.*notify-check/.test(l) && l.trim() !== "# Ayo: surface unread pings on turn completion")
-    .join("\n");
+    .join("\n")
+    .replace(/^\n+/, ""); // drop the leading blank line(s) our block left behind
   writeFileSync(CODEX_CONFIG, cleaned);
   return "removed";
 }
@@ -151,7 +163,7 @@ export function hooksInstall(which: { claude: boolean; codex: boolean }): void {
     const msg = {
       installed: pc.green(`✓ Claude Code hooks installed`) + pc.dim(" (SessionStart, UserPromptSubmit)"),
       already: pc.dim("• Claude Code hooks already present"),
-      error: pc.red("✗ could not write Claude settings"),
+      error: pc.red("✗ ~/.claude/settings.json is malformed — fix it and re-run (left untouched)"),
     }[r];
     console.log(msg);
   }

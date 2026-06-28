@@ -1,0 +1,5 @@
+# Copy to `.dev.vars` for local development (`wrangler dev`).
+# AYO_DEV_AUTH=1 enables the no-GitHub auth stub. NEVER set this in production.
+AYO_DEV_AUTH=1
+# Shared secret the Worker stamps on Durable Object sub-requests.
+INTERNAL_SECRET=dev-internal-secret

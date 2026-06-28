@@ -1,0 +1,34 @@
+# Follow-ups
+
+Known limitations and deferred items, with their source. Things here were
+consciously deferred (not bugs blocking the current milestone) during the
+independent code review of the scaffold + Layer 1.
+
+## Deferred from review (2026-06-28)
+
+- **Addressing by handle, not userId** — `Ayo.to` stores handles (per ADR 0002).
+  If a member re-aliases their handle, older messages addressed to the old
+  handle stop matching them in inbox/unread filtering. Revisit when aliasing
+  ships; likely store recipients as `userId[]` and render handles at read time.
+- **KV `list` 1000-key pagination** — `teamsForUser` and the DO's `storage.list`
+  calls don't paginate. Fine at MVP volume; add cursor pagination before a
+  team/user can exceed 1000 of anything.
+- **`unread` count vs cursor semantics** — the `ready` frame's `unread` is the
+  global unread count, not "unread since your cursor." Acceptable per ADR, but
+  clarify if the daemon ever surfaces the number to the user.
+- **ULID uses `Math.random()`** — documented in `core/src/ids.ts`. IDs double as
+  sortable cursors and don't need to be unguessable, but a production relay
+  should use a monotonic, CSPRNG-backed factory before launch.
+- **DO storage is KV-style, not SQLite** — ADR 0002 targets SQLite-in-DO
+  (messages/deliveries/members tables) for production; the scaffold uses the DO
+  key-value store.
+
+## Still open from the build plan
+
+- **Real GitHub device flow** (#2) — the relay auth is an explicit dev stub
+  (`AYO_DEV_AUTH=1`); the real OAuth device exchange is a TODO in
+  `packages/relay/src/index.ts`.
+- **Real daemon install** (#3) — `ayo daemon start` spawns a detached process +
+  pidfile; ADR 0001's target is a launchd/systemd user service.
+- **Windows daemon** — install path is mac/Linux first; the installer should
+  fail gracefully on Windows rather than silently no-op.

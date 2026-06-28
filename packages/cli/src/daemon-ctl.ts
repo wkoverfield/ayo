@@ -6,14 +6,20 @@
  */
 
 import { spawn } from "node:child_process";
-import { openSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { openSync, closeSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import pc from "picocolors";
 import { AYO_DIR } from "./config.js";
 
 const PID_PATH = join(AYO_DIR, "daemon.pid");
+const LOCK_PATH = join(AYO_DIR, "daemon.lock");
 const LOG_PATH = join(AYO_DIR, "ayod.log");
+
+/** Synchronous sleep (CLI is one-shot; we briefly block to confirm process death). */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
 
 function readPid(): number | null {
   if (!existsSync(PID_PATH)) return null;
@@ -37,20 +43,41 @@ export function isDaemonAlive(): boolean {
 }
 
 export function daemonStart(): void {
-  const existing = readPid();
-  if (existing && isAlive(existing)) {
-    console.log(pc.dim(`ayod already running (pid ${existing})`));
+  // Atomic lock: two concurrent starts (e.g. a hook firing while the user runs
+  // `ayo daemon start`) must not both spawn a daemon — that double-notifies.
+  let lockFd: number;
+  try {
+    lockFd = openSync(LOCK_PATH, "wx");
+  } catch {
+    console.log(pc.dim("ayod start already in progress"));
     return;
   }
-  const ayodPath = join(dirname(fileURLToPath(import.meta.url)), "ayod.js");
-  const out = openSync(LOG_PATH, "a");
-  const child = spawn(process.execPath, [ayodPath], {
-    detached: true,
-    stdio: ["ignore", out, out],
-  });
-  child.unref();
-  if (child.pid) writeFileSync(PID_PATH, String(child.pid));
-  console.log(pc.green(`✓ ayod started`) + pc.dim(` (pid ${child.pid}) — logs: ayo daemon logs`));
+  try {
+    const existing = readPid();
+    if (existing && isAlive(existing)) {
+      console.log(pc.dim(`ayod already running (pid ${existing})`));
+      return;
+    }
+    if (existing) rmSync(PID_PATH, { force: true }); // stale pidfile from a crash
+
+    const ayodPath = join(dirname(fileURLToPath(import.meta.url)), "ayod.js");
+    const out = openSync(LOG_PATH, "w"); // fresh log each start — no unbounded growth
+    const child = spawn(process.execPath, [ayodPath], {
+      detached: true,
+      stdio: ["ignore", out, out],
+    });
+    child.on("error", (err) => console.error(pc.red(`✗ failed to start ayod: ${err.message}`)));
+    if (!child.pid) {
+      console.error(pc.red("✗ ayod did not start (no pid assigned)"));
+      return;
+    }
+    writeFileSync(PID_PATH, String(child.pid));
+    child.unref();
+    console.log(pc.green(`✓ ayod started`) + pc.dim(` (pid ${child.pid}) — logs: ayo daemon logs`));
+  } finally {
+    closeSync(lockFd);
+    rmSync(LOCK_PATH, { force: true });
+  }
 }
 
 export function daemonStatus(): void {
@@ -65,10 +92,25 @@ export function daemonStatus(): void {
 export function daemonStop(): void {
   const pid = readPid();
   if (!pid || !isAlive(pid)) {
+    rmSync(PID_PATH, { force: true }); // clean up a stale pidfile
     console.log(pc.dim("ayod not running"));
     return;
   }
-  process.kill(pid);
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    /* already gone */
+  }
+  // Confirm death before removing the pidfile, so a follow-up `start` can't race
+  // a still-alive daemon into a double.
+  for (let i = 0; i < 10 && isAlive(pid); i++) sleepSync(50);
+  if (isAlive(pid)) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* ignore */
+    }
+  }
   rmSync(PID_PATH, { force: true });
   console.log(pc.green("✓ ayod stopped"));
 }

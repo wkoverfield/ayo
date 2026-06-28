@@ -88,7 +88,11 @@ export default {
         const ayoId = flatAyo[1]!;
         const teamId = await teamForAyo(env, ayoId as never);
         if (!teamId) return apiError("team_not_found", "Unknown ayo.");
-        return forwardToTeam(req, env, userId, teamId, `/internal/ayo/${ayoId}/${flatAyo[2]}`);
+        // Authz: the caller must be a member of the resolved team. Without this,
+        // any authenticated user could read/resolve an Ayo by guessing its id.
+        const membership = await getMembership(env, teamId, userId);
+        if (!membership) return apiError("not_a_member", "You are not a member of this team.");
+        return forwardToTeam(req, env, userId, teamId, `/internal/ayo/${ayoId}/${flatAyo[2]}`, membership.handle);
       }
 
       // ── Team-scoped routes -> forward to the team DO ────────────────────
@@ -105,10 +109,7 @@ export default {
 
       return apiError("team_not_found", "Unknown route.");
     } catch (err) {
-      return json(
-        { error: { code: "rate_limited", message: `Unexpected: ${(err as Error).message}` } },
-        { status: 500 },
-      );
+      return apiError("internal_error", `Unexpected: ${(err as Error).message}`);
     }
   },
 } satisfies ExportedHandler<Env>;
@@ -142,6 +143,9 @@ async function forwardToTeam(
   headers.set("x-ayo-user", userId);
   headers.set("x-ayo-handle", handle);
   headers.set("x-ayo-team", teamId);
+  // Prove to the DO this request came through the Worker (the only identity
+  // verifier). The DO rejects any request missing this when the secret is set.
+  if (env.INTERNAL_SECRET) headers.set("x-ayo-internal", env.INTERNAL_SECRET);
 
   return stub.fetch(new Request(target, { method: req.method, headers, body: req.body }));
 }
@@ -168,21 +172,21 @@ async function handleDeviceStart(req: Request, env: Env): Promise<Response> {
 }
 
 async function handleDevicePoll(req: Request, env: Env): Promise<Response> {
+  // TODO: real GitHub device flow. Until then only the explicit dev stub works.
+  if (!devStubEnabled(env)) return apiError("unauthorized", "GitHub device flow not yet implemented.");
+
   const { device_code } = (await req.json()) as { device_code: string };
   const handle = await env.AYO_KV.get(`device:${device_code}`);
   if (!handle) return apiError("invalid_token", "Unknown or expired device code.");
 
-  if (devStubEnabled(env)) {
-    // Reuse an existing dev user with this handle, else mint one.
-    const existing = await env.AYO_KV.get(`devhandle:${handle}`);
-    const userId = existing ?? newUserId();
-    const user: PublicUser = { id: userId as never, handle, name: handle };
-    await putUser(env, user);
-    if (!existing) await env.AYO_KV.put(`devhandle:${handle}`, userId);
-    const session_token = await issueSession(env, userId as never);
-    await env.AYO_KV.delete(`device:${device_code}`);
-    const body: DevicePollResponse = { session_token, user };
-    return json(body);
-  }
-  return apiError("unauthorized", "GitHub device flow not yet implemented.");
+  // Reuse an existing dev user with this handle, else mint one.
+  const existing = await env.AYO_KV.get(`devhandle:${handle}`);
+  const userId = existing ?? newUserId();
+  const user: PublicUser = { id: userId as never, handle, name: handle };
+  await putUser(env, user);
+  if (!existing) await env.AYO_KV.put(`devhandle:${handle}`, userId);
+  const session_token = await issueSession(env, userId as never);
+  await env.AYO_KV.delete(`device:${device_code}`);
+  const body: DevicePollResponse = { session_token, user };
+  return json(body);
 }
