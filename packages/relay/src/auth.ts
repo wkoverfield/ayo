@@ -8,6 +8,8 @@
  */
 
 import type { PublicUser, UserId } from "@ayo-dev/core";
+import { newUserId } from "@ayo-dev/core";
+import type { GithubUser } from "./github.js";
 import type { Env } from "./env.js";
 
 export interface Session {
@@ -36,6 +38,33 @@ export async function getUser(env: Env, userId: UserId): Promise<PublicUser | nu
 
 export async function putUser(env: Env, user: PublicUser): Promise<void> {
   await env.AYO_KV.put(`user:${user.id}`, JSON.stringify(user));
+}
+
+/** Map a GitHub identity to a stable Ayo user (keyed by GitHub numeric id, so a
+ *  handle rename doesn't create a new account). On first login the handle
+ *  defaults to the GitHub login; on later logins we preserve the existing
+ *  handle (so a future `ayo alias` isn't clobbered) and only refresh the name. */
+export async function findOrCreateGithubUser(env: Env, gh: GithubUser): Promise<PublicUser> {
+  const key = `ghuser:${gh.id}`;
+  const existingId = await env.AYO_KV.get(key);
+  if (existingId) {
+    const existing = await getUser(env, existingId as UserId);
+    if (existing) {
+      const refreshed: PublicUser = { ...existing, name: gh.name ?? existing.name };
+      await putUser(env, refreshed);
+      return refreshed;
+    }
+    // Pointer exists but the user record is gone (KV eviction / partial write):
+    // reconstruct under the SAME userId so team memberships aren't orphaned.
+    const recovered: PublicUser = { id: existingId as UserId, handle: gh.login, name: gh.name ?? gh.login };
+    await putUser(env, recovered);
+    return recovered;
+  }
+  const userId = newUserId() as UserId;
+  const user: PublicUser = { id: userId, handle: gh.login, name: gh.name ?? gh.login };
+  await putUser(env, user);
+  await env.AYO_KV.put(key, userId);
+  return user;
 }
 
 export async function issueSession(env: Env, userId: UserId): Promise<string> {

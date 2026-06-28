@@ -4,6 +4,7 @@
  * manages the daemon. Receiving is the daemon's job (ADR 0001/0002).
  */
 
+import { spawn } from "node:child_process";
 import { Command } from "commander";
 import pc from "picocolors";
 import {
@@ -33,20 +34,72 @@ function fail(err: unknown): never {
   process.exit(1);
 }
 
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Best-effort: open the verification URL in the user's browser. The URL comes
+ *  from the relay and is handed to a subprocess, so: only plain https URLs, and
+ *  NEVER `shell: true` (which would let URL metacharacters be interpreted). */
+function openBrowser(url: string): void {
+  if (!/^https:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/.test(url)) return; // also skips the dev stub's spaced pseudo-URL
+  const [cmd, args]: readonly [string, string[]] =
+    process.platform === "darwin"
+      ? ["open", [url]]
+      : process.platform === "win32"
+        ? ["cmd.exe", ["/c", "start", "", url]]
+        : ["xdg-open", [url]];
+  try {
+    spawn(cmd, args, { stdio: "ignore", detached: true, shell: false }).unref();
+  } catch {
+    /* no browser — the user can open the URL manually */
+  }
+}
+
 // ── login ────────────────────────────────────────────────────────────────────
 program
   .command("login")
-  .description("Authenticate (GitHub device flow; dev stub locally)")
-  .option("--handle <handle>", "handle to use in dev stub", process.env.USER ?? "dev")
+  .description("Authenticate with GitHub (device flow)")
+  .option("--handle <handle>", "handle to use with the local dev stub", process.env.USER ?? "dev")
   .action(async (opts) => {
     try {
       const start = await api.deviceStart(opts.handle);
-      console.log(`Authorize: ${pc.cyan(start.verification_uri)}  code: ${pc.bold(start.user_code)}`);
-      // Dev stub auto-approves; poll once.
-      const poll = await api.devicePoll(start.device_code);
-      saveSession({ token: poll.session_token, userId: poll.user.id, handle: poll.user.handle });
-      console.log(pc.green(`✓ logged in as ${pc.bold(poll.user.handle)}`));
+      console.log(`\n  Open ${pc.cyan(start.verification_uri)}`);
+      console.log(`  Enter code ${pc.bold(start.user_code)}\n`);
+      openBrowser(start.verification_uri);
+
+      // Coerce defensively: a malformed relay response must not produce NaN
+      // (NaN deadline exits instantly; NaN interval spins setTimeout at 0ms).
+      const expiresIn = Number(start.expires_in);
+      const deadline = Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 900) * 1000;
+      const startInterval = Number(start.interval);
+      let interval = Number.isFinite(startInterval) && startInterval > 0 ? startInterval : 5;
+
+      process.stdout.write(pc.dim("  Waiting for authorization"));
+      while (Date.now() < deadline) {
+        // Poll first so the dev stub (which is instantly complete) returns at once.
+        const poll = await api.devicePoll(start.device_code);
+        if (poll.status === "complete") {
+          saveSession({ token: poll.session_token, userId: poll.user.id, handle: poll.user.handle });
+          console.log(pc.green(`\n✓ logged in as ${pc.bold(poll.user.handle)}`));
+          return;
+        }
+        if (poll.status === "slow_down") {
+          // Honor GitHub's new interval (forwarded by the relay), capped so a
+          // repeated slow_down can't ratchet the wait to absurd lengths.
+          const next = Number(poll.interval);
+          interval = Math.min(Number.isFinite(next) && next > 0 ? next : interval + 5, 60);
+        }
+        process.stdout.write(pc.dim("."));
+        await sleep(interval * 1000);
+      }
+      console.error(pc.red("\n✗ login timed out — run `ayo login` again"));
+      process.exit(1);
     } catch (err) {
+      // Terminal device-flow errors carry a friendly message from the relay —
+      // show it without the noisy `unauthorized:` code prefix.
+      if (err instanceof RelayError) {
+        console.error(pc.red(`\n✗ ${err.message}`));
+        process.exit(1);
+      }
       fail(err);
     }
   });
