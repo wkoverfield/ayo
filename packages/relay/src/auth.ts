@@ -54,6 +54,11 @@ export async function findOrCreateGithubUser(env: Env, gh: GithubUser): Promise<
       await putUser(env, refreshed);
       return refreshed;
     }
+    // Pointer exists but the user record is gone (KV eviction / partial write):
+    // reconstruct under the SAME userId so team memberships aren't orphaned.
+    const recovered: PublicUser = { id: existingId as UserId, handle: gh.login, name: gh.name ?? gh.login };
+    await putUser(env, recovered);
+    return recovered;
   }
   const userId = newUserId() as UserId;
   const user: PublicUser = { id: userId, handle: gh.login, name: gh.name ?? gh.login };
