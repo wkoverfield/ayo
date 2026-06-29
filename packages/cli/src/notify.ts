@@ -25,7 +25,6 @@ export function notifyAyo(ayo: Ayo): void {
     macNotify(title, ayo.body, urgent);
   } else {
     notifier.notify({ title, message: ayo.body, sound: urgent });
-    // TODO: wire `terminal-notifier -execute "ayo open <id>"` for click-to-open.
   }
 }
 

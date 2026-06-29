@@ -2,9 +2,11 @@
  * Session auth. A session token is opaque and identifies one user across all
  * their teams (ADR 0002). Tokens are stored in KV: `session:<token>` -> userId.
  *
- * GitHub device flow is the production path (TODO: exchange device_code via
- * GitHub's OAuth device endpoints). When GITHUB_CLIENT_ID is unset, the auth
- * routes fall back to a dev stub so the local vertical slice runs end-to-end.
+ * GitHub device flow is the production path: the relay starts a device code and
+ * polls GitHub's OAuth device endpoint, issuing a session on success (see
+ * github.ts). The no-GitHub dev stub is gated on AYO_DEV_AUTH==="1" (see
+ * devStubEnabled) — NOT merely a missing client id — so a prod deploy that
+ * forgets to set GITHUB_CLIENT_ID fails closed instead of silently stubbing.
  */
 
 import type { PublicUser, UserId } from "@ayo-dev/core";

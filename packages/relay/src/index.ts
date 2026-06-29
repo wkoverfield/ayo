@@ -70,6 +70,9 @@ export default {
 
       if (path === "/v1/teams" && req.method === "POST") {
         const { name } = (await req.json()) as CreateTeamRequest;
+        if (typeof name !== "string" || name.trim() === "" || name.length > 100) {
+          return apiError("bad_request", "Team name must be 1–100 characters.");
+        }
         const user = await loadUser(env, userId);
         if (!user) return apiError("invalid_token", "Session user not found.");
         const team = await createTeam(env, name);
@@ -124,7 +127,10 @@ export default {
 
       return apiError("team_not_found", "Unknown route.");
     } catch (err) {
-      return apiError("internal_error", `Unexpected: ${(err as Error).message}`);
+      // Log the detail for observability; return a generic message so internal
+      // implementation details don't leak to callers.
+      console.error("relay error:", (err as Error)?.stack ?? err);
+      return apiError("internal_error", "An unexpected error occurred.");
     }
   },
 } satisfies ExportedHandler<Env>;

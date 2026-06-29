@@ -8,7 +8,9 @@ No Slack. No screenshots. No _"what branch are you on?"_
 
 </div>
 
+<!-- Demo GIF: record with scripts/demo.sh, save to docs/demo.gif, then uncomment:
 <p align="center"><img src="docs/demo.gif" alt="Ayo demo" width="720"></p>
+-->
 
 ---
 
@@ -92,19 +94,15 @@ firing tells the sender your machine buzzed — not that you looked.
 
 ## Quickstart
 
-> **Status:** the hosted relay is live and auth (GitHub) + the full CLI/MCP work.
-> The npm packages aren't published yet — for now, clone and `pnpm build`, then
-> alias `ayo` to `packages/cli/dist/ayo.js`. `npm install -g @ayo-dev/cli` is the
-> coming install path.
-
 ```bash
+npm install -g @ayo-dev/cli
+
 ayo login                       # GitHub device flow
 ayo daemon install              # install ayod (your receiver) as a login service
 ayo mcp install                 # use Ayo from inside Codex & Claude
 ayo hooks install               # surface unread Ayos in-agent
 
-ayo team create "Hack Midwest"  # get a join code
-ayo invite                      # share it; teammates run `ayo join <code>`
+ayo team create "Hack Midwest"  # prints a join code — teammates run `ayo join <code>`
 
 ayo kenny "demo is cooked"      # → native toast on Kenny's machine
 ayo board                       # live team HUD

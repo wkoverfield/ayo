@@ -39,8 +39,9 @@ args = ["/absolute/path/to/ayo/packages/mcp/dist/index.js"]
 claude mcp add -s user ayo -- node /absolute/path/to/ayo/packages/mcp/dist/index.js
 ```
 
-(Once `@ayo-dev/mcp` is published, the command becomes `npx -y @ayo-dev/mcp` and
-`ayo mcp install` uses that automatically.)
+(`@ayo-dev/mcp` is published, so when the CLI is installed from npm, `ayo mcp
+install` registers `npx -y @ayo-dev/mcp` automatically. The local-path form above
+is only used when running from a checkout where `packages/mcp/dist` exists.)
 
 > In dev, the absolute path to `packages/mcp/dist/index.js` is baked into your
 > agent config at install time. If you **move the repo** or wipe

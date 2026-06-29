@@ -4,6 +4,29 @@ Known limitations and deferred items, with their source. Things here were
 consciously deferred (not bugs blocking the current milestone) during the
 independent code review of the scaffold + Layer 1.
 
+## Relay hardening (deferred from pre-public security review, 2026-06-29)
+
+The cheap items from that review are DONE on the relay (INTERNAL_SECRET now fails
+closed; send body capped at 4 KB + context at 64 KB; team/hackathon name + status
+validated; generic error messages). Still deferred:
+
+- **Rate limiting** — no limits on `POST /v1/auth/device(/poll)` (unauth, also
+  proxies to GitHub), `POST /v1/teams/join` (join-code brute force — 31^6 space,
+  but unthrottled), or `POST /v1/teams/:id/ayo` (send flood → DO writes + fanout).
+  Add a KV-counter or Cloudflare Rate Limiting binding, prioritizing the unauth
+  device endpoints and per-token send caps.
+- **Session token expiry** — `session:<token>` is written with no `expirationTtl`
+  and there's no logout. Add a rolling TTL (e.g. 90d) + `POST /v1/auth/logout`.
+- **`handleInbox` full scan** — lists all `msg:` with no limit/cursor (unlike the
+  feed/timeline which are bounded). Use the existing `?since=` cursor as a storage
+  `start` key + a limit.
+- **`ulid()` uses `Math.random()`** for the random component (core/src/ids.ts) —
+  fine for message ids, but switch to `crypto.getRandomValues()` so `team_`/`user_`
+  ids aren't predictable.
+- **`DEFAULT_RELAY_URL` is a personal subdomain** (`ayo-relay.wkoverfield.workers.dev`)
+  baked into the published `@ayo-dev/core`. Move to a stable product domain before
+  wider adoption so the relay can move without breaking installed CLIs.
+
 ## Deferred from review (2026-06-28)
 
 - **Addressing by handle, not userId** — `Ayo.to` stores handles (per ADR 0002).
