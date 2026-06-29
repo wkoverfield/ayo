@@ -42,7 +42,8 @@ function render(team: string, members: MemberPresence[], items: FeedItem[], hack
   const rule = `  ${pc.dim("─".repeat(WIDTH))}`;
   const online = members.filter((m) => m.online).length;
   const title = hackathon?.name ?? team;
-  const right = hackathon ? pc.yellow(`⏳ ${fmtCountdown(hackathon.endsAt)}`) : pc.dim("● live");
+  const countdown = hackathon ? fmtCountdown(hackathon.endsAt) : "";
+  const right = countdown ? pc.yellow(`⏳ ${countdown}`) : pc.dim("● live");
   const out: string[] = ["", `  ${pc.bold(pc.yellow(`⚡ ${title}`))}    ${pc.dim(`${online}/${members.length} online`)}    ${right}`, rule];
 
   // Each member's latest repo@branch + last-activity time, derived from the feed.
@@ -91,7 +92,9 @@ async function fetchBoard(s: Parameters<typeof api.members>[0], teamId: string) 
   const [members, items, hackathon] = await Promise.all([
     api.members(s, teamId).then((r) => r.members),
     api.feed(s, teamId, 30).then((r) => r.items),
-    api.getHackathon(s, teamId).then((r) => r.hackathon),
+    // Best-effort: the hackathon is cosmetic header data — a failure here must
+    // NOT blank the whole board (which members + feed drive).
+    api.getHackathon(s, teamId).then((r) => r.hackathon).catch(() => null),
   ]);
   return { members, items, hackathon };
 }

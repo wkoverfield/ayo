@@ -38,10 +38,11 @@ export async function hackathonStart(name: string, ends: string): Promise<void> 
     const cfg = loadConfig();
     if (!cfg.activeTeamId) return void console.log("No active team. `ayo team create` or `ayo join` first.");
     const ms = parseDuration(ends);
-    if (ms == null) return void console.log("Invalid --ends. Use e.g. 18h, 90m, 1h30m.");
+    if (ms == null || ms === 0) return void console.log("Invalid --ends. Use a positive duration, e.g. 18h, 90m, 1h30m.");
     const endsAt = new Date(Date.now() + ms).toISOString();
     const { hackathon } = await api.startHackathon(s, cfg.activeTeamId, { name, endsAt });
-    console.log(pc.green(`✓ ${pc.bold(name)} started`) + pc.dim(` — ${fmtCountdown(hackathon!.endsAt)}`));
+    const cd = fmtCountdown(hackathon!.endsAt);
+    console.log(pc.green(`✓ ${pc.bold(name)} started`) + (cd ? pc.dim(` — ${cd}`) : ""));
     console.log(pc.dim("  the team gets ⏰ nudges at T-minus 1h / 30m / 10m / 0. `ayo board` to watch."));
   } catch (err) {
     oops(err);
@@ -78,7 +79,11 @@ export async function hackathonExport(): Promise<void> {
   try {
     const s = requireSession();
     const cfg = loadConfig();
-    if (!cfg.activeTeamId) return void console.log("No active team.");
+    // Pre-flight failures go to stderr — stdout is the markdown (it gets redirected).
+    if (!cfg.activeTeamId) {
+      process.exitCode = 1;
+      return void console.error("No active team.");
+    }
     const { hackathon, events } = await api.timeline(s, cfg.activeTeamId);
     process.stdout.write(renderTimeline(hackathon, events));
   } catch (err) {
@@ -90,9 +95,15 @@ function clock(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+/** Escape markdown metacharacters + newlines in user-controlled fields, so an
+ *  exported `story.md` can't be broken or have links/emphasis injected. */
+function md(s: string): string {
+  return (s ?? "").replace(/[\\`*_[\]()<>#|]/g, "\\$&").replace(/\r?\n/g, " ");
+}
+
 function renderTimeline(h: HackathonState | null, events: Ayo[]): string {
   const lines: string[] = [];
-  lines.push(`# ${h?.name ?? "Team"} — timeline`);
+  lines.push(`# ${md(h?.name ?? "Team")} — timeline`);
   if (h) lines.push("", `_${clock(h.startedAt)} → ${clock(h.endsAt)}_`);
   lines.push("");
   if (events.length === 0) {
@@ -100,9 +111,9 @@ function renderTimeline(h: HackathonState | null, events: Ayo[]): string {
   }
   for (const e of events) {
     const icon = e.kind === "handoff" ? "🤝" : e.from.handle === "ayo" ? "⏰" : e.urgency === "urgent" ? "🚨" : "📣";
-    const to = e.kind === "handoff" ? ` → ${e.to.includes("*") ? "team" : e.to.join(", ")}` : "";
-    const where = e.context?.branch ? ` _(${e.context.repo}@${e.context.branch})_` : "";
-    lines.push(`- **${clock(e.createdAt)}** ${icon} **${e.from.handle}**${to}: ${e.body}${where}`);
+    const to = e.kind === "handoff" ? ` → ${e.to.includes("*") ? "team" : e.to.map(md).join(", ")}` : "";
+    const where = e.context?.branch ? ` _(${md(e.context.repo ?? "")}@${md(e.context.branch)})_` : "";
+    lines.push(`- **${clock(e.createdAt)}** ${icon} **${md(e.from.handle)}**${to}: ${md(e.body)}${where}`);
   }
   lines.push("");
   return lines.join("\n");

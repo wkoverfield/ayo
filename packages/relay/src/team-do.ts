@@ -332,6 +332,9 @@ export class TeamHub implements DurableObject {
     if (!input?.name || !Number.isFinite(endsMs) || endsMs <= Date.now()) {
       return apiError("bad_request", "A hackathon needs a name and a future endsAt.");
     }
+    if (endsMs - Date.now() > 24 * 60 * 60 * 1000) {
+      return apiError("bad_request", "A hackathon can't run longer than 24 hours.");
+    }
     const teamId = req.headers.get("x-ayo-team") as string;
     // Milestones already in the past at start are pre-marked fired — don't nudge
     // "1 hour left" when the sprint started with only minutes on the clock.
@@ -351,9 +354,12 @@ export class TeamHub implements DurableObject {
   /** Full team-relevant event log, oldest-first, for `ayo hackathon export`. */
   private async handleTimeline(): Promise<Response> {
     const rec = await this.ctx.storage.get<HackathonRecord>("hackathon");
+    // Scope to the current hackathon's window so a prior sprint's events don't
+    // bleed in; if no hackathon is running, the full team-relevant log.
+    const since = rec ? new Date(rec.startedAt).getTime() : 0;
     const map = await this.ctx.storage.list<Ayo>({ prefix: "msg:", reverse: true, limit: 1000 });
     const events = [...map.values()]
-      .filter((a) => a.to.includes("*") || a.kind === "handoff") // team-relevant, like the board
+      .filter((a) => (a.to.includes("*") || a.kind === "handoff") && new Date(a.createdAt).getTime() >= since)
       .reverse(); // oldest-first for a readable timeline
     return Response.json({ hackathon: rec ? publicHackathon(rec) : null, events } satisfies TimelineResponse);
   }
@@ -379,8 +385,10 @@ export class TeamHub implements DurableObject {
     for (const m of due) {
       await this.broadcastSystem(milestoneMessage(m), rec.teamId);
       rec.fired.push(m);
+      // Persist after EACH milestone: alarms are at-least-once, so a mid-loop
+      // failure + retry must not re-broadcast a nudge we already sent.
+      await this.ctx.storage.put("hackathon", rec);
     }
-    await this.ctx.storage.put("hackathon", rec);
     await this.scheduleNextMilestone(rec);
   }
 
