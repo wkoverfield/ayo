@@ -12,8 +12,14 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import notifier from "node-notifier";
 import type { Ayo } from "@ayo-dev/core";
+
+// The Ayo mark, shipped in the package (dist/notify.js → ../assets/ayo.png).
+// node-notifier passes it to notify-send (Linux) / SnoreToast (Windows). macOS
+// uses osascript, which can't set a custom icon — see docs/FOLLOWUPS.md.
+const ICON_PATH = fileURLToPath(new URL("../assets/ayo.png", import.meta.url));
 
 export function notifyAyo(ayo: Ayo): void {
   const ctx = ayo.context;
@@ -24,7 +30,7 @@ export function notifyAyo(ayo: Ayo): void {
   if (process.platform === "darwin") {
     macNotify(title, ayo.body, urgent);
   } else {
-    notifier.notify({ title, message: ayo.body, sound: urgent });
+    notifier.notify({ title, message: ayo.body, sound: urgent, icon: ICON_PATH });
   }
 }
 

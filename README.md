@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/ayo-logo.png" alt="Ayo" width="120">
+
 # Ayo
 
 **Ping your teammates from inside Codex and Claude.**

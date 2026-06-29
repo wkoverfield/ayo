@@ -4,6 +4,20 @@ Known limitations and deferred items, with their source. Things here were
 consciously deferred (not bugs blocking the current milestone) during the
 independent code review of the scaffold + Layer 1.
 
+## macOS notification icon
+
+The Ayo mark now ships at `packages/cli/assets/ayo.png` and is wired into the
+Windows/Linux notification path (`notify.ts` → node-notifier `icon`). **macOS does
+not show it:** the mac path uses `osascript … display notification`, which always
+renders the icon of the posting app (Script Editor) and has no parameter for a
+custom image. To brand the macOS toast, either (a) ship a code-signed + notarized
+`Ayo.app` helper that posts via `UNUserNotificationCenter` (macOS shows that
+bundle's AppIcon), or (b) shell out to a user-installed, signed `terminal-notifier`
+with `-appIcon`/`-contentImage` (adds an install dependency + reliability risk —
+the reason we left it). Also unverified: the Windows toast path has never run on a
+real Windows box, and app identity there ideally wants a registered AppUserModelID
+(node-notifier `appID` + a Start Menu shortcut), not just the `icon`.
+
 ## Relay hardening (deferred from pre-public security review, 2026-06-29)
 
 The cheap items from that review are DONE on the relay (INTERNAL_SECRET now fails
