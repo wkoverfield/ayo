@@ -1,10 +1,14 @@
+<div align="center">
+<img src="https://raw.githubusercontent.com/wkoverfield/ayo/main/docs/ayo-logo.png" alt="Ayo" width="120">
+</div>
+
 # @ayo-dev/cli
 
-**Ping your teammates from inside Codex and Claude — without leaving your terminal.**
+**Ping your teammates from inside Codex and Claude, without leaving your terminal.**
 
 Ayo is a tiny CLI + background daemon that lets coding agents (and you) send
 work-context pings to your team. Your agent finishes a handoff, hits a blocker,
-or ships a branch — and your teammate gets a native desktop notification with the
+or ships a branch, and your teammate gets a native desktop notification with the
 repo, branch, and a one-line "why," straight from the tool they're already in.
 
 ```bash
