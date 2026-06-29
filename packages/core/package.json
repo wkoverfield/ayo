@@ -1,6 +1,6 @@
 {
   "name": "@ayo-dev/core",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Shared message schema, wire protocol, and types for Ayo.",
   "license": "MIT",
   "author": "Wilson Overfield",

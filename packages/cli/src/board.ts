@@ -55,7 +55,7 @@ function render(team: string, members: MemberPresence[], items: FeedItem[], hack
     if (!lastSeen.has(h)) lastSeen.set(h, it.ayo.createdAt);
   }
 
-  if (members.length === 0) out.push(pc.dim("  (no teammates yet — `ayo invite`)"));
+  if (members.length === 0) out.push(pc.dim("  (no teammates yet — share your join code; they run `ayo join <code>`)"));
   for (const m of members) {
     const dot = m.online ? pc.green("●") : pc.dim("○");
     const handle = pc.bold(m.handle.padEnd(11));

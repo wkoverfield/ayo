@@ -5,7 +5,7 @@
 import type { AyoId, TeamId, UserId } from "./ids.js";
 
 export type Urgency = "low" | "normal" | "urgent";
-export type AyoKind = "ping" | "handoff" | "status-bump";
+export type AyoKind = "ping" | "handoff";
 
 /** A handle is a per-team display name; defaults to GitHub login, aliasable. */
 export type Handle = string;

@@ -84,7 +84,9 @@ export class TeamHub implements DurableObject {
   async fetch(req: Request): Promise<Response> {
     // Reject anything that didn't come through the Worker (the only identity
     // verifier). The `x-ayo-*` identity headers are trusted ONLY because of this.
-    if (this.env.INTERNAL_SECRET && req.headers.get("x-ayo-internal") !== this.env.INTERNAL_SECRET) {
+    // Fail CLOSED: if INTERNAL_SECRET is unset (a misconfigured deploy), reject
+    // everything rather than trusting unauthenticated, spoofable identity headers.
+    if (!this.env.INTERNAL_SECRET || req.headers.get("x-ayo-internal") !== this.env.INTERNAL_SECRET) {
       return new Response("forbidden", { status: 403 });
     }
 
@@ -183,8 +185,15 @@ export class TeamHub implements DurableObject {
     if (!input || typeof input.body !== "string" || input.body.trim() === "") {
       return apiError("bad_request", "An Ayo needs a non-empty body.");
     }
+    if (input.body.length > 4096) {
+      return apiError("payload_too_large", "Ayo body exceeds 4 KB.");
+    }
     if (!Array.isArray(input.to) || input.to.length === 0) {
       return apiError("unknown_recipient", "An Ayo needs at least one recipient.");
+    }
+    // Bound the attached git context so one Ayo can't bloat DO storage / fanout.
+    if (input.context && JSON.stringify(input.context).length > 64 * 1024) {
+      return apiError("payload_too_large", "Ayo context exceeds 64 KB.");
     }
     const teamId = req.headers.get("x-ayo-team") as Ayo["teamId"];
     const ayo: Ayo = {
@@ -304,8 +313,8 @@ export class TeamHub implements DurableObject {
     const scan = Math.min(limit * 5, 200);
     const map = await this.ctx.storage.list<Ayo>({ prefix: "msg:", reverse: true, limit: scan });
     // Team-visible = broadcasts (to ["*"]) and ALL handoffs (a directed handoff
-    // is intentionally public so any teammate can pick it up). Direct pings —
-    // and status-bumps — stay private to the recipient's inbox unless broadcast.
+    // is intentionally public so any teammate can pick it up). Direct 1:1 pings
+    // stay private to the recipient's inbox unless broadcast.
     const recent = [...map.values()]
       .filter((a) => a.to.includes("*") || a.kind === "handoff")
       .slice(0, limit);
@@ -333,8 +342,8 @@ export class TeamHub implements DurableObject {
   private async handleHackathonStart(req: Request): Promise<Response> {
     const input = (await req.json().catch(() => null)) as StartHackathonRequest | null;
     const endsMs = input ? new Date(input.endsAt).getTime() : NaN;
-    if (!input?.name || !Number.isFinite(endsMs) || endsMs <= Date.now()) {
-      return apiError("bad_request", "A hackathon needs a name and a future endsAt.");
+    if (!input?.name || typeof input.name !== "string" || input.name.length > 100 || !Number.isFinite(endsMs) || endsMs <= Date.now()) {
+      return apiError("bad_request", "A hackathon needs a name (≤100 chars) and a future endsAt.");
     }
     if (endsMs - Date.now() > 24 * 60 * 60 * 1000) {
       return apiError("bad_request", "A hackathon can't run longer than 24 hours.");
@@ -420,7 +429,14 @@ export class TeamHub implements DurableObject {
   }
 
   private async handleStatus(req: Request, userId: UserId, handle: Handle): Promise<Response> {
-    const input = (await req.json()) as SetStatusRequest;
+    const input = (await req.json().catch(() => null)) as SetStatusRequest | null;
+    const VALID_STATUS = ["active", "heads-down", "away", "dnd"];
+    if (!input || !VALID_STATUS.includes(input.status)) {
+      return apiError("bad_request", "status must be one of: active, heads-down, away, dnd.");
+    }
+    if (input.statusText != null && (typeof input.statusText !== "string" || input.statusText.length > 200)) {
+      return apiError("bad_request", "statusText must be a string up to 200 characters.");
+    }
     const member = await this.getMember(userId);
     if (member) {
       member.status = input.status;

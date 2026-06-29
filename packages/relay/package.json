@@ -1,6 +1,6 @@
 {
   "name": "@ayo-dev/relay",
-  "version": "0.0.0",
+  "version": "0.1.2",
   "description": "Ayo realtime relay — Cloudflare Worker + one Durable Object per team.",
   "license": "MIT",
   "type": "module",

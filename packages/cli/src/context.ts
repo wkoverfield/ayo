@@ -9,9 +9,20 @@ import { execFileSync } from "node:child_process";
 import { basename } from "node:path";
 import { type AyoContext, MAX_DIFF_BYTES } from "@ayo-dev/core";
 
+// Cap git output read into memory, comfortably above the 64 KB diff cap: a normal
+// large diff is read then truncated, while a pathological one (giant generated
+// file) throws ENOBUFS -> caught -> null instead of allocating hundreds of MB.
+// (Node's default maxBuffer is only 1 MB, which would drop diffs between 1 MB and
+// the truncation logic.) Mirrors mcp/src/context.ts.
+const GIT_MAX_BUFFER = 8 * 1024 * 1024;
+
 function git(args: string[]): string | null {
   try {
-    return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return execFileSync("git", args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: GIT_MAX_BUFFER,
+    }).trim();
   } catch {
     return null;
   }

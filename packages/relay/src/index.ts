@@ -70,6 +70,9 @@ export default {
 
       if (path === "/v1/teams" && req.method === "POST") {
         const { name } = (await req.json()) as CreateTeamRequest;
+        if (typeof name !== "string" || name.trim() === "" || name.length > 100) {
+          return apiError("bad_request", "Team name must be 1–100 characters.");
+        }
         const user = await loadUser(env, userId);
         if (!user) return apiError("invalid_token", "Session user not found.");
         const team = await createTeam(env, name);
@@ -124,7 +127,10 @@ export default {
 
       return apiError("team_not_found", "Unknown route.");
     } catch (err) {
-      return apiError("internal_error", `Unexpected: ${(err as Error).message}`);
+      // Log the detail for observability; return a generic message so internal
+      // implementation details don't leak to callers.
+      console.error("relay error:", (err as Error)?.stack ?? err);
+      return apiError("internal_error", "An unexpected error occurred.");
     }
   },
 } satisfies ExportedHandler<Env>;
@@ -147,7 +153,10 @@ async function registerInRoster(env: Env, teamId: string, userId: string, handle
     const stub = env.TEAM.get(env.TEAM.idFromName(teamId));
     const headers = new Headers({ "x-ayo-user": userId, "x-ayo-handle": handle, "x-ayo-team": teamId });
     if (env.INTERNAL_SECRET) headers.set("x-ayo-internal", env.INTERNAL_SECRET);
-    await stub.fetch(new Request("https://team/internal/register", { method: "POST", headers }));
+    const res = await stub.fetch(new Request("https://team/internal/register", { method: "POST", headers }));
+    // A 403 here (Response, not a throw) means the DO rejected the internal call
+    // — log it so a secret misconfig is diagnosable (roster still self-heals).
+    if (!res.ok) console.warn("registerInRoster: DO returned", res.status, "for team", teamId);
   } catch {
     /* ignore — self-healing on first interaction */
   }

@@ -6,6 +6,7 @@
  * send + pull. Identity is shared with the CLI via ~/.ayo (see relay.ts).
  */
 
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -13,7 +14,16 @@ import type { AyoContext, SendAyoResponse } from "@ayo-dev/core";
 import { loadAuth, relay } from "./relay.js";
 import { captureContext } from "./context.js";
 
-const server = new McpServer({ name: "ayo", version: "0.0.0" });
+// Real version from package.json (dist/index.js → ../package.json, always packed).
+function pkgVersion(): string {
+  try {
+    return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+const server = new McpServer({ name: "ayo", version: pkgVersion() });
 
 const recipients = z.array(z.string().min(1)).min(1).describe('Handles to ping. Use ["*"] for the whole team.');
 
