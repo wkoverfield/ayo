@@ -30,6 +30,7 @@ import { board } from "./board.js";
 import { hackathonEnd, hackathonExport, hackathonStart, hackathonStatus } from "./hackathon.js";
 import { hooksInstall, hooksStatus, hooksUninstall } from "./hooks.js";
 import { mcpInstall, mcpStatus, mcpUninstall } from "./mcp-setup.js";
+import { soundList, soundMute, soundPreview, soundSet, soundStatus, soundUnmute } from "./sound-setup.js";
 
 // Read the real version from package.json (dist/ayo.js → ../package.json, which
 // npm always includes in the tarball). Fall back so `--version` can never throw.
@@ -336,6 +337,15 @@ hack
   .command("export")
   .description("Print the event timeline as markdown (`> story.md`)")
   .action(() => hackathonExport());
+
+// ── sound (your signature notification sound) ────────────────────────────────
+const sound = program.command("sound").description("Your signature sound — what teammates hear when you ping");
+sound.command("list").description("List the preset sounds").action(() => soundList());
+sound.command("preview <id>").description("Hear a preset").action((id: string) => soundPreview(id));
+sound.command("set <id>").description("Make a preset your signature sound").action((id: string) => soundSet(id));
+sound.command("status").description("Show your sound + mute settings").action(() => soundStatus());
+sound.command("mute [handle]").description("Mute all incoming sounds, or one sender").action((h?: string) => soundMute(h));
+sound.command("unmute [handle]").description("Unmute all, or one sender").action((h?: string) => soundUnmute(h));
 
 // ── board (live team dashboard) ──────────────────────────────────────────────
 program

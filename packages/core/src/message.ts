@@ -19,6 +19,19 @@ export interface Sender {
   name: string;
 }
 
+/** Built-in preset sound ids (shipped as WAV in the CLI's assets/sounds/). */
+export const SOUND_PRESETS = ["ping", "chime", "boop", "coin", "pluck", "airhorn", "knock"] as const;
+export type SoundPreset = (typeof SOUND_PRESETS)[number];
+
+/**
+ * The notification sound a SENDER chose; plays on the RECIPIENT's machine — a
+ * "signature sound" so you learn who's pinging by ear. The relay stamps it onto
+ * each Ayo from the sender's profile (snapshot at send time).
+ */
+export type AyoSound =
+  | { kind: "preset"; id: string } // a SOUND_PRESETS id, played from the bundled set
+  | { kind: "custom"; url: string; hash: string }; // R2-backed clip (Phase A2)
+
 /**
  * Opaque to the relay — the CLI captures it, the relay stores & forwards it.
  * Privacy boundary: explicit packets only, never full session transcripts.
@@ -52,6 +65,8 @@ export interface Ayo {
   replyTo?: AyoId | null;
   /** ISO timestamp; null = never expires. */
   expiresAt?: string | null;
+  /** The sender's chosen sound, stamped by the relay. null/absent = recipient default. */
+  sound?: AyoSound | null;
   /** ISO timestamp. */
   createdAt: string;
 }

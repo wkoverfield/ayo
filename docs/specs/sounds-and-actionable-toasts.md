@@ -166,14 +166,12 @@ Scoped so each phase is independently shippable and reviewable.
   reply, Resolve, SnoreToast action buttons on Windows (logo-vs-buttons call),
   Linux feature-detected best-effort.
 
-## 4. Open decisions for Wilson
-1. **macOS helper → post-and-block-until-handled** (recommended) — confirm we're
-   OK evolving the helper this way (vs. keeping fire-and-exit and losing clicks).
-2. **Windows: logo vs. action buttons** (can't have both via node-notifier) —
-   lean toward buttons.
-3. **Build order** — A1 → A2 → B1 → B2, or front-load the clickable headline (B1)
-   before custom-upload (A2)?
-4. **Sound: bundle the preset set** — who picks/sources the ~6–8 starter WAVs.
+## 4. Decisions (resolved 2026-06-29)
+1. **Build order: A1 → A2 → B1 → B2** (sounds first; clickable after).
+2. **macOS helper → post-and-block-until-handled** — yes, evolve it (enables B1).
+3. **Windows: action buttons over a custom logo** — interaction beats branding there.
+4. **Preset set** — start with synthesized placeholder WAVs (distinct, redistributable);
+   swap in designed sounds later. Source: generated at `assets/sounds/`.
 
 ## 5. Change inventory
 **Real:** `wrangler.jsonc`+`env.ts` (R2); new `sounds.ts` (upload/serve);

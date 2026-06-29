@@ -28,6 +28,10 @@ export interface Config {
   activeTeamId?: string;
   /** Optional local aliases: alias -> handle. */
   aliases?: Record<string, string>;
+  /** Mute ALL incoming signature sounds (you still get the toast). Recipient wins. */
+  muteSounds?: boolean;
+  /** Mute specific senders' sounds, by handle. */
+  mutedSenders?: string[];
 }
 
 export interface Session {

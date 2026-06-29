@@ -8,6 +8,7 @@
  */
 
 import type {
+  AyoSound,
   CreateTeamRequest,
   CreateTeamResponse,
   DevicePollResponse,
@@ -17,7 +18,7 @@ import type {
   MeResponse,
   PublicUser,
 } from "@ayo-dev/core";
-import { newUserId } from "@ayo-dev/core";
+import { newUserId, SOUND_PRESETS } from "@ayo-dev/core";
 import { apiError, json, type Env } from "./env.js";
 import {
   authenticate,
@@ -66,6 +67,16 @@ export default {
         const teams = await teamsForUser(env, userId);
         const body: MeResponse = { user, teams };
         return json(body);
+      }
+
+      // Set your signature sound (relay stamps it onto each Ayo you send).
+      if (path === "/v1/me/sound" && req.method === "PUT") {
+        const user = await loadUser(env, userId);
+        if (!user) return apiError("invalid_token", "Session user not found.");
+        const sound = validateSound(await req.json().catch(() => undefined));
+        if (sound === undefined) return apiError("bad_request", "Unknown sound.");
+        await putUser(env, { ...user, sound });
+        return json({ sound });
       }
 
       if (path === "/v1/teams" && req.method === "POST") {
@@ -122,7 +133,14 @@ export default {
         if (!team) return apiError("team_not_found", "No team with that id.");
         const membership = await getMembership(env, teamId as never, userId);
         if (!membership) return apiError("not_a_member", "You are not a member of this team.");
-        return await forwardToTeam(req, env, userId, teamId as never, `/internal${rest || ""}`, membership.handle);
+        // On send, stamp the sender's signature sound from their profile so the
+        // recipient gets it inline (snapshot at send time, like `from`).
+        let soundHeader: string | undefined;
+        if (req.method === "POST" && rest === "/ayo") {
+          const sender = await loadUser(env, userId);
+          if (sender?.sound) soundHeader = JSON.stringify(sender.sound);
+        }
+        return await forwardToTeam(req, env, userId, teamId as never, `/internal${rest || ""}`, membership.handle, soundHeader);
       }
 
       return apiError("team_not_found", "Unknown route.");
@@ -166,6 +184,20 @@ async function registerInRoster(env: Env, teamId: string, userId: string, handle
  * Forward a request to a team's DO, stripping the public prefix and injecting
  * verified identity. The original URL's query string is preserved.
  */
+/** Validate a `PUT /v1/me/sound` body: `null` clears; a known preset id is
+ *  accepted; anything else is rejected (custom clips arrive in Phase A2).
+ *  Returns `undefined` for an invalid body. */
+function validateSound(body: unknown): AyoSound | null | undefined {
+  if (body === null) return null;
+  if (body && typeof body === "object" && (body as { kind?: unknown }).kind === "preset") {
+    const id = (body as { id?: unknown }).id;
+    if (typeof id === "string" && (SOUND_PRESETS as readonly string[]).includes(id)) {
+      return { kind: "preset", id };
+    }
+  }
+  return undefined;
+}
+
 async function forwardToTeam(
   req: Request,
   env: Env,
@@ -173,6 +205,7 @@ async function forwardToTeam(
   teamId: string,
   internalPath: string,
   handle = "",
+  soundHeader?: string,
 ): Promise<Response> {
   const id = env.TEAM.idFromName(teamId);
   const stub = env.TEAM.get(id);
@@ -184,6 +217,7 @@ async function forwardToTeam(
   headers.set("x-ayo-user", userId);
   headers.set("x-ayo-handle", handle);
   headers.set("x-ayo-team", teamId);
+  if (soundHeader) headers.set("x-ayo-sound", soundHeader);
   // Prove to the DO this request came through the Worker (the only identity
   // verifier). The DO rejects any request missing this when the secret is set.
   if (env.INTERNAL_SECRET) headers.set("x-ayo-internal", env.INTERNAL_SECRET);

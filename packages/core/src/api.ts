@@ -4,7 +4,7 @@
  * one-shot process (CLI, MCP) can perform it without the daemon's socket.
  */
 
-import type { Ayo, AyoContext, AyoKind, Handle, Recipients, Urgency } from "./message.js";
+import type { Ayo, AyoContext, AyoKind, AyoSound, Handle, Recipients, Urgency } from "./message.js";
 import type { AyoId, TeamId, UserId } from "./ids.js";
 import type { MemberPresence, PresenceStatus } from "./wire.js";
 
@@ -51,7 +51,12 @@ export interface PublicUser {
   id: UserId;
   handle: Handle;
   name: string;
+  /** The sender's chosen notification sound; the relay stamps it onto each Ayo. */
+  sound?: AyoSound | null;
 }
+
+/** Body of `PUT /v1/me/sound` — set your signature sound (or `null` to clear). */
+export type SetSoundRequest = AyoSound | null;
 
 /** Poll is long-running: the CLI calls it on an interval until `complete`. */
 export type DevicePollResponse =
