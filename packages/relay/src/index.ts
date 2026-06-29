@@ -153,7 +153,10 @@ async function registerInRoster(env: Env, teamId: string, userId: string, handle
     const stub = env.TEAM.get(env.TEAM.idFromName(teamId));
     const headers = new Headers({ "x-ayo-user": userId, "x-ayo-handle": handle, "x-ayo-team": teamId });
     if (env.INTERNAL_SECRET) headers.set("x-ayo-internal", env.INTERNAL_SECRET);
-    await stub.fetch(new Request("https://team/internal/register", { method: "POST", headers }));
+    const res = await stub.fetch(new Request("https://team/internal/register", { method: "POST", headers }));
+    // A 403 here (Response, not a throw) means the DO rejected the internal call
+    // — log it so a secret misconfig is diagnosable (roster still self-heals).
+    if (!res.ok) console.warn("registerInRoster: DO returned", res.status, "for team", teamId);
   } catch {
     /* ignore — self-healing on first interaction */
   }

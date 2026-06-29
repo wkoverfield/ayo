@@ -90,7 +90,7 @@ parallel once they agree on this.
 
 Field notes:
 - `to`: array of handles. `["*"]` = team broadcast.
-- `kind`: `ping` | `handoff` | `status-bump`. Drives client rendering.
+- `kind`: `ping` | `handoff`. Drives client rendering.
 - `urgency`: `low` | `normal` | `urgent`. `urgent` can override do-not-disturb.
 - `context`: entirely optional, opaque to the relay. `diff` is `null` unless the
   sender passed `--with-diff`; **capped at 64 KB** (CLI truncates with a
