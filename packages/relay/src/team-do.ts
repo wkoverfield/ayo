@@ -253,8 +253,12 @@ export class TeamHub implements DurableObject {
   /** Recent team-wide activity for the live board (newest first). */
   private async handleFeed(url: URL): Promise<Response> {
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
-    const all = await this.ctx.storage.list<Ayo>({ prefix: "msg:" });
-    const recent = [...all.values()].sort((a, b) => (a.id < b.id ? 1 : -1)).slice(0, limit); // newest first
+    // reverse+limit returns the newest `limit` msgs directly. WITHOUT reverse,
+    // storage.list caps at 1000 ascending (oldest) keys, which would silently
+    // drop the newest messages once a team exceeds 1000 Ayos — and only load N,
+    // not the whole history.
+    const map = await this.ctx.storage.list<Ayo>({ prefix: "msg:", reverse: true, limit });
+    const recent = [...map.values()]; // already newest-first
     const items = await Promise.all(
       recent.map(async (ayo) => {
         // Resolved iff every recipient that got a delivery row has resolved it.
