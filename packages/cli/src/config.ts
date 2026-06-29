@@ -4,10 +4,15 @@
  */
 
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 
-export const AYO_DIR = join(homedir(), ".ayo");
+/**
+ * Where Ayo keeps session/config/inbox/daemon files. Defaults to ~/.ayo;
+ * override with AYO_DIR to run multiple personas on one machine (handy for
+ * self-testing and demos: `AYO_DIR=/tmp/ayo-maya ayo ...`).
+ */
+export const AYO_DIR = process.env.AYO_DIR ? resolve(process.env.AYO_DIR) : join(homedir(), ".ayo");
 const CONFIG_PATH = join(AYO_DIR, "config.json");
 const SESSION_PATH = join(AYO_DIR, "session.json");
 
