@@ -35,6 +35,17 @@ independent code review of the scaffold + Layer 1.
 - **Staged + unstaged** — `git diff HEAD` covers both (working tree vs HEAD), which
   is intended; documented in the share_context/create_handoff tool descriptions.
 
+## Board / feed (deferred from review)
+
+- **Feed message fetch is bounded** (`reverse:true, limit`), but it still does one
+  `delivery:` list per returned item (N extra reads, N ≤ 100) to compute
+  `resolved`. And the older inbox/unread/countUnread methods still do an unbounded
+  `msg:` scan — fine at hackathon volume, but page/index them before scale.
+- **Board polling, not realtime** — `ayo board` polls every 3s. Could subscribe
+  to the daemon's WebSocket stream for instant updates instead.
+- **Board backoff** — on repeated relay errors the board retries on the fixed 3s
+  tick (no exponential backoff). Acceptable; revisit if it gets chatty.
+
 ## Still open from the build plan
 
 - **Real GitHub device flow** (#2) — ✅ implemented (`packages/relay/src/github.ts`

@@ -15,6 +15,7 @@ import type {
   Ayo,
   Delivery,
   DeliveryState,
+  FeedResponse,
   Handle,
   InboxResponse,
   MemberPresence,
@@ -64,6 +65,7 @@ export class TeamHub implements DurableObject {
     if (path === "/internal/ayo" && req.method === "POST") return this.handleSend(req, userId, handle);
     if (path === "/internal/inbox" && req.method === "GET") return this.handleInbox(url, userId, handle);
     if (path === "/internal/members" && req.method === "GET") return this.handleMembers();
+    if (path === "/internal/feed" && req.method === "GET") return this.handleFeed(url);
     if (path === "/internal/status" && req.method === "PUT") return this.handleStatus(req, userId, handle);
 
     const stateMatch = path.match(/^\/internal\/ayo\/(ayo_[^/]+)\/(read|resolve)$/);
@@ -248,6 +250,29 @@ export class TeamHub implements DurableObject {
     return Response.json(body);
   }
 
+  /** Recent team-wide activity for the live board (newest first). */
+  private async handleFeed(url: URL): Promise<Response> {
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
+    // reverse+limit fetches only the newest `limit` msgs. Without a limit,
+    // storage.list returns ALL matching keys (no cap — correct data, but it
+    // loads the entire team history into the DO's memory on every poll, an OOM
+    // risk at scale). reverse + limit gets the newest N directly and bounded.
+    const map = await this.ctx.storage.list<Ayo>({ prefix: "msg:", reverse: true, limit });
+    const recent = [...map.values()]; // already newest-first
+    const items = await Promise.all(
+      recent.map(async (ayo) => {
+        // Resolved iff every recipient that got a delivery row has resolved it.
+        // No delivery rows yet (e.g. a just-sent Ayo) => not resolved, which is
+        // the right default: an un-acknowledged handoff shows as OPEN, not closed.
+        const dels = await this.ctx.storage.list<Delivery>({ prefix: `delivery:${ayo.id}:` });
+        const states = [...dels.values()].map((d) => d.state);
+        const resolved = states.length > 0 && states.every((s) => s === "resolved");
+        return { ayo, resolved };
+      }),
+    );
+    return Response.json({ items } satisfies FeedResponse);
+  }
+
   private async handleStatus(req: Request, userId: UserId, handle: Handle): Promise<Response> {
     const input = (await req.json()) as SetStatusRequest;
     const member = await this.getMember(userId);
@@ -307,7 +332,9 @@ export class TeamHub implements DurableObject {
   }
 
   private async rememberMember(userId: UserId, handle: Handle): Promise<void> {
-    if (!userId) return;
+    // Never create or touch a member with a blank handle (e.g. a forwarded
+    // request missing x-ayo-handle) — that would put a nameless row on the board.
+    if (!userId || !handle) return;
     const existing = await this.getMember(userId);
     if (existing && existing.handle === handle) return;
     const member: Member = existing ?? { userId, handle, status: "active", statusText: null };

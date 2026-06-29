@@ -25,6 +25,7 @@ import {
   daemonLogs,
 } from "./daemon-ctl.js";
 import { surfaceUnread } from "./agent.js";
+import { board } from "./board.js";
 import { hooksInstall, hooksStatus, hooksUninstall } from "./hooks.js";
 import { mcpInstall, mcpStatus, mcpUninstall } from "./mcp-setup.js";
 
@@ -280,6 +281,48 @@ program
       console.log(pc.green("✓ relay reachable"));
     } catch (err) {
       console.log(pc.red(`✗ relay unreachable: ${(err as Error).message}`));
+    }
+  });
+
+// ── board (live team dashboard) ──────────────────────────────────────────────
+program
+  .command("board")
+  .description("Live team dashboard — presence, status, open handoffs, recent activity")
+  .option("--once", "print one frame and exit (for piping / scripts)")
+  .action((opts) => board({ once: !!opts.once }));
+
+// ── handoff (the hero: hand off your work with full context) ─────────────────
+program
+  .command("handoff <target> [message...]")
+  .description("Hand off your work to a teammate (branch, changed files, diff stat, note)")
+  .option("--with-diff", "attach the full git diff (may contain uncommitted secrets)", false)
+  .option("--urgent", "mark urgent", false)
+  .action(async (target: string, message: string[], opts) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      const broadcast = ["all", "team", "everyone"].includes(target);
+      const to = broadcast ? ["*"] : [resolveHandle(cfg, target)];
+      const ctx = captureContext({ withDiff: opts.withDiff });
+      const res = await api.send(s, cfg.activeTeamId, {
+        to,
+        body: message.join(" ") || "Handing this off.",
+        kind: "handoff",
+        urgency: opts.urgent ? "urgent" : "normal",
+        context: ctx,
+      });
+      console.log(pc.green(`✓ handoff sent`) + pc.dim(` (${res.deliveredTo.length} live, ${res.queuedFor.length} queued)`));
+      if (ctx?.repo) {
+        const bits = [`${ctx.repo}@${ctx.branch ?? "?"}`, `${ctx.changedFiles?.length ?? 0} changed`];
+        if (ctx.diff) bits.push("full diff");
+        if (ctx.diffStat) bits.push(ctx.diffStat);
+        console.log(pc.dim(`  ${bits.join(" · ")}`));
+      } else {
+        console.log(pc.dim("  (not in a git repo — sent without code context)"));
+      }
+    } catch (err) {
+      fail(err);
     }
   });
 
