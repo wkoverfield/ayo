@@ -156,7 +156,7 @@ server.tool(
   {
     ayoId: z
       .string()
-      .regex(/^ayo_[0-9A-Za-z]{26}$/, "must be an Ayo id like ayo_01J9Z3…")
+      .regex(/^ayo_[0-9A-HJKMNP-TV-Z]{26}$/, "must be an Ayo id like ayo_01J9Z3…")
       .describe("The Ayo id from read_inbox (the `id` field, not `from.id`)."),
   },
   async ({ ayoId }) => {

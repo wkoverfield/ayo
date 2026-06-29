@@ -68,7 +68,7 @@ async function call<T>(auth: Auth, path: string, opts: { method?: string; body?:
     } catch {
       /* not JSON — use raw */
     }
-    throw new Error(msg.replace(auth.token, "[redacted]").slice(0, 500));
+    throw new Error(msg.replaceAll(auth.token, "[redacted]").slice(0, 500));
   }
   return (await res.json()) as T;
 }
