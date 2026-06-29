@@ -7,7 +7,13 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
-import type { InboxResponse, SendAyoRequest, SendAyoResponse } from "@ayo-dev/core";
+import type {
+  InboxResponse,
+  MembersResponse,
+  SendAyoRequest,
+  SendAyoResponse,
+  SetStatusRequest,
+} from "@ayo-dev/core";
 
 const AYO_DIR = process.env.AYO_DIR ? resolve(process.env.AYO_DIR) : join(homedir(), ".ayo");
 
@@ -56,4 +62,8 @@ export const relay = {
   inbox: (teamId: string, unreadOnly: boolean) =>
     call<InboxResponse>(`/v1/teams/${teamId}/inbox${unreadOnly ? "?unreadOnly=1" : ""}`),
   markRead: (ayoId: string) => call<{ ok: true }>(`/v1/ayo/${ayoId}/read`, { method: "POST" }),
+  resolve: (ayoId: string) => call<{ ok: true }>(`/v1/ayo/${ayoId}/resolve`, { method: "POST" }),
+  members: (teamId: string) => call<MembersResponse>(`/v1/teams/${teamId}/members`),
+  setStatus: (teamId: string, body: SetStatusRequest) =>
+    call<{ ok: true }>(`/v1/teams/${teamId}/status`, { method: "PUT", body }),
 };
