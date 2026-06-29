@@ -13,13 +13,18 @@
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_classes": ["TeamHub"] }
+    // SQLite-backed DO: eligible on the Workers free plan and the modern default.
+    // Our DO uses the ctx.storage KV API, which SQLite-backed DOs support.
+    { "tag": "v1", "new_sqlite_classes": ["TeamHub"] }
   ],
 
   // Directory: users, teams metadata, memberships, join codes, sessions,
   // and the ayoId -> teamId index. CRUD lives here; realtime lives in the DO.
+  // Production KV namespace (self-hosters: create your own with
+  // `wrangler kv namespace create AYO_KV` and swap the id). Local `wrangler dev`
+  // simulates KV and ignores this id.
   "kv_namespaces": [
-    { "binding": "AYO_KV", "id": "REPLACE_WITH_KV_ID", "preview_id": "REPLACE_WITH_PREVIEW_KV_ID" }
+    { "binding": "AYO_KV", "id": "5ef84a86916c467ab99f9a091c710194" }
   ]
 
   // Secrets are set via `wrangler secret put` (NOT here — vars in this file are
