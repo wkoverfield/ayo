@@ -22,9 +22,12 @@ export async function validateWav(buf: ArrayBuffer): Promise<WavCheck> {
     buf.byteLength > 44 && v.getUint32(0, false) === 0x52494646 && v.getUint32(8, false) === 0x57415645;
   if (!isWav) return { ok: false, code: "bad_request", message: "Not a valid WAV file." };
 
-  // Bound duration from the fmt byteRate (offset 28, LE) without decoding.
+  // Bound duration from the fmt byteRate (offset 28, LE) without decoding. Reject
+  // byteRate 0 — otherwise the duration check is skipped and ~1 MB of arbitrary
+  // bytes could ride behind a valid header.
   const byteRate = v.getUint32(28, true);
-  if (byteRate > 0 && (buf.byteLength - 44) / byteRate > MAX_SECONDS) {
+  if (byteRate === 0) return { ok: false, code: "bad_request", message: "Invalid WAV (zero byte rate)." };
+  if ((buf.byteLength - 44) / byteRate > MAX_SECONDS) {
     return { ok: false, code: "payload_too_large", message: "Sound must be ~2 seconds or less." };
   }
 

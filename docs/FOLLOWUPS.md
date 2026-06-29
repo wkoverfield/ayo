@@ -32,6 +32,13 @@ Also unverified: the Windows toast path has never run on a real box, and app
 identity there ideally wants a registered AppUserModelID (node-notifier `appID` +
 a Start Menu shortcut), not just `icon`.
 
+## Custom sound cache growth
+
+The daemon caches custom signature clips at `$AYO_DIR/sounds/<hash>.wav`, keyed by
+content hash — so a sender changing their clip leaves the old file behind. Bounded
+in practice (one ~1 MB clip per sender, rarely changed), but add LRU/size-cap
+pruning if it ever matters.
+
 ## Relay hardening (deferred from pre-public security review, 2026-06-29)
 
 The cheap items from that review are DONE on the relay (INTERNAL_SECRET now fails

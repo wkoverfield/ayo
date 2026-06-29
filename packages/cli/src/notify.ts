@@ -62,7 +62,11 @@ function playSignatureSound(ayo: Ayo): boolean {
     if (p) playSound(p);
     return p !== null;
   }
-  // custom: play from cache, or fetch+verify on first receipt then play.
+  // custom: play from cache, or fetch+verify on first receipt then play. We return
+  // true (silencing the toast's own sound) even while the first fetch is pending —
+  // so if that fetch fails (offline / 404 / bad hash), the ping is silent that once
+  // and the clip caches for next time. Accepted tradeoff vs. doubling the toast
+  // sound; note an urgent Ayo can arrive silent on a sender's very first custom clip.
   const cached = cachedCustomPath(sound.hash);
   if (cached) {
     playSound(cached);

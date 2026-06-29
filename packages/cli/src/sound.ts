@@ -26,8 +26,13 @@ export function presetPath(id: string): string | null {
   return existsSync(p) ? p : null;
 }
 
+// A custom clip's content hash is relay-supplied; only ever a SHA-256 hex digest.
+// Guard it before using as a filename so a hostile relay can't path-traverse.
+const HEX64 = /^[0-9a-f]{64}$/;
+
 /** A custom clip's cached path (keyed by content hash), or null if not yet fetched. */
 export function cachedCustomPath(hash: string): string | null {
+  if (!HEX64.test(hash)) return null;
   const p = join(CACHE_DIR, `${hash}.wav`);
   return existsSync(p) ? p : null;
 }
@@ -46,13 +51,20 @@ export function resolveSound(sound: AyoSound | null | undefined): string | null 
  * yields a new file.
  */
 export async function ensureCustomSound(sound: { url: string; hash: string }): Promise<string | null> {
+  if (!HEX64.test(sound.hash)) return null;
   const cached = cachedCustomPath(sound.hash);
   if (cached) return cached;
   try {
     const session = loadSession();
     if (!session) return null;
     const { relayUrl } = loadConfig();
-    const res = await fetch(`${relayUrl}${sound.url}`, { headers: { authorization: `Bearer ${session.token}` } });
+    // sound.url is relay-supplied; pin it to a relative path on the configured
+    // relay origin so a hostile/MITM'd relay can't redirect the bearer token to
+    // its own server (token exfiltration).
+    if (!sound.url.startsWith("/") || sound.url.startsWith("//")) return null;
+    const target = new URL(sound.url, relayUrl);
+    if (target.origin !== new URL(relayUrl).origin) return null;
+    const res = await fetch(target, { headers: { authorization: `Bearer ${session.token}` } });
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     if (createHash("sha256").update(buf).digest("hex") !== sound.hash) return null; // integrity

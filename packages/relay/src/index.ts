@@ -99,10 +99,12 @@ export default {
       const soundGet = path.match(/^\/v1\/sounds\/(user_[^/]+)$/);
       if (soundGet && req.method === "GET") {
         const obj = await env.AYO_SOUNDS.get(`sound/${soundGet[1]}.wav`);
-        if (!obj) return apiError("team_not_found", "No sound for that user.");
+        if (!obj) return apiError("not_found", "No sound for that user.");
         const headers = new Headers();
         obj.writeHttpMetadata(headers);
         headers.set("etag", obj.httpEtag);
+        // Don't let a browser MIME-sniff user-uploaded bytes away from audio/wav.
+        headers.set("X-Content-Type-Options", "nosniff");
         return new Response(obj.body, { headers });
       }
 
