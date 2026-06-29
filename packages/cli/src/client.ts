@@ -6,6 +6,7 @@ import type {
   CreateTeamResponse,
   DevicePollResponse,
   DeviceStartResponse,
+  FeedResponse,
   InboxResponse,
   JoinTeamResponse,
   MembersResponse,
@@ -61,6 +62,9 @@ export const api = {
 
   members: (s: Session, teamId: string) =>
     call<MembersResponse>(`/v1/teams/${teamId}/members`, { token: s.token }),
+
+  feed: (s: Session, teamId: string, limit = 30) =>
+    call<FeedResponse>(`/v1/teams/${teamId}/feed?limit=${limit}`, { token: s.token }),
 
   send: (s: Session, teamId: string, body: SendAyoRequest) =>
     call<SendAyoResponse>(`/v1/teams/${teamId}/ayo`, { method: "POST", body, token: s.token }),

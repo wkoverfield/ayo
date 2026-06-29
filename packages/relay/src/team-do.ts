@@ -15,6 +15,7 @@ import type {
   Ayo,
   Delivery,
   DeliveryState,
+  FeedResponse,
   Handle,
   InboxResponse,
   MemberPresence,
@@ -64,6 +65,7 @@ export class TeamHub implements DurableObject {
     if (path === "/internal/ayo" && req.method === "POST") return this.handleSend(req, userId, handle);
     if (path === "/internal/inbox" && req.method === "GET") return this.handleInbox(url, userId, handle);
     if (path === "/internal/members" && req.method === "GET") return this.handleMembers();
+    if (path === "/internal/feed" && req.method === "GET") return this.handleFeed(url);
     if (path === "/internal/status" && req.method === "PUT") return this.handleStatus(req, userId, handle);
 
     const stateMatch = path.match(/^\/internal\/ayo\/(ayo_[^/]+)\/(read|resolve)$/);
@@ -246,6 +248,23 @@ export class TeamHub implements DurableObject {
   private async handleMembers(): Promise<Response> {
     const body: MembersResponse = { members: await this.roster() };
     return Response.json(body);
+  }
+
+  /** Recent team-wide activity for the live board (newest first). */
+  private async handleFeed(url: URL): Promise<Response> {
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
+    const all = await this.ctx.storage.list<Ayo>({ prefix: "msg:" });
+    const recent = [...all.values()].sort((a, b) => (a.id < b.id ? 1 : -1)).slice(0, limit); // newest first
+    const items = await Promise.all(
+      recent.map(async (ayo) => {
+        // Resolved iff every recipient that got a delivery row has resolved it.
+        const dels = await this.ctx.storage.list<Delivery>({ prefix: `delivery:${ayo.id}:` });
+        const states = [...dels.values()].map((d) => d.state);
+        const resolved = states.length > 0 && states.every((s) => s === "resolved");
+        return { ayo, resolved };
+      }),
+    );
+    return Response.json({ items } satisfies FeedResponse);
   }
 
   private async handleStatus(req: Request, userId: UserId, handle: Handle): Promise<Response> {

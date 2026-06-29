@@ -115,6 +115,16 @@ export interface InboxResponse {
   cursor: AyoId | null;
 }
 
+/** Recent team-wide activity for the live board (newest first). `resolved` is
+ *  whether every recipient has resolved it — used to surface OPEN handoffs. */
+export interface FeedItem {
+  ayo: Ayo;
+  resolved: boolean;
+}
+export interface FeedResponse {
+  items: FeedItem[];
+}
+
 export interface SetStatusRequest {
   status: PresenceStatus;
   statusText?: string | null;
