@@ -41,6 +41,12 @@ independent code review of the scaffold + Layer 1.
 - **systemd lingering** — `WantedBy=default.target` starts ayod on user login.
   On headless Linux / servers without a login session, `loginctl enable-linger
   $USER` is needed for boot-time start; the installer could offer this.
+- **Notification branding (macOS)** — macOS notifications go through `osascript`
+  (node-notifier's bundled `terminal-notifier` is unsigned and silently dropped
+  by modern macOS — verified on Darwin 25). They show under **"Script Editor"**,
+  not "Ayo". For a branded toast (and click-to-open), ship a signed Ayo helper
+  app or a notarized `terminal-notifier`. Linux/Windows still use node-notifier
+  and are **untested** on those platforms.
 - **Daemon log I/O** — `ayod` logs via synchronous `appendFileSync` per line.
   Fine at hackathon message rates; if a future high-frequency stream lands,
   switch to a buffered/async writer. (In-flight rotation at ~1MB is implemented.)
