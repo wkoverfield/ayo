@@ -4,8 +4,9 @@
 // notification to this bundle (dev.ayo.notifier) and renders its AppIcon.
 //
 // Usage: AyoNotifier "<title>" "<body>" [--sound]
-// Exit:  0 posted · 2 not authorized · 3 post failed — notify.ts falls back to
-//        osascript on any non-zero so a denied/missing helper still notifies.
+// Exit:  0 posted · 2 not authorized · 3 post failed. (Useful when run directly;
+//        notify.ts launches via `open`, which can't see these; it falls back to
+//        osascript only if the launch itself fails, not on a post failure.)
 
 import Foundation
 import UserNotifications
