@@ -262,6 +262,8 @@ export class TeamHub implements DurableObject {
     const items = await Promise.all(
       recent.map(async (ayo) => {
         // Resolved iff every recipient that got a delivery row has resolved it.
+        // No delivery rows yet (e.g. a just-sent Ayo) => not resolved, which is
+        // the right default: an un-acknowledged handoff shows as OPEN, not closed.
         const dels = await this.ctx.storage.list<Delivery>({ prefix: `delivery:${ayo.id}:` });
         const states = [...dels.values()].map((d) => d.state);
         const resolved = states.length > 0 && states.every((s) => s === "resolved");
@@ -330,7 +332,9 @@ export class TeamHub implements DurableObject {
   }
 
   private async rememberMember(userId: UserId, handle: Handle): Promise<void> {
-    if (!userId) return;
+    // Never create or touch a member with a blank handle (e.g. a forwarded
+    // request missing x-ayo-handle) — that would put a nameless row on the board.
+    if (!userId || !handle) return;
     const existing = await this.getMember(userId);
     if (existing && existing.handle === handle) return;
     const member: Member = existing ?? { userId, handle, status: "active", statusText: null };
