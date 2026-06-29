@@ -31,7 +31,9 @@ export interface Session {
 }
 
 const DEFAULT_CONFIG: Config = {
-  relayUrl: process.env.AYO_RELAY_URL ?? "http://127.0.0.1:8787",
+  // Hosted Ayo relay. Override with AYO_RELAY_URL (local dev) or `relayUrl` in
+  // ~/.ayo/config.json (self-hosters point this at their own deploy).
+  relayUrl: process.env.AYO_RELAY_URL ?? "https://ayo-relay.wkoverfield.workers.dev",
 };
 
 function ensureDir(): void {
