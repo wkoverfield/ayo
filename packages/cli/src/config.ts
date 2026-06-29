@@ -6,6 +6,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { DEFAULT_RELAY_URL } from "@ayo-dev/core";
 
 /**
  * Where Ayo keeps session/config/inbox/daemon files. Defaults to ~/.ayo;
@@ -38,7 +39,7 @@ export interface Session {
 const DEFAULT_CONFIG: Config = {
   // Hosted Ayo relay. Override with AYO_RELAY_URL (local dev) or `relayUrl` in
   // ~/.ayo/config.json (self-hosters point this at their own deploy).
-  relayUrl: process.env.AYO_RELAY_URL ?? "https://ayo-relay.wkoverfield.workers.dev",
+  relayUrl: process.env.AYO_RELAY_URL ?? DEFAULT_RELAY_URL,
 };
 
 function ensureDir(): void {

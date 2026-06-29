@@ -10,6 +10,10 @@ import type { MemberPresence, PresenceStatus } from "./wire.js";
 
 export const API_VERSION = "v1";
 
+/** The hosted Ayo relay. CLI and MCP fall back to this; override with
+ *  AYO_RELAY_URL (local dev) or `relayUrl` in ~/.ayo/config.json (self-host). */
+export const DEFAULT_RELAY_URL = "https://ayo-relay.wkoverfield.workers.dev";
+
 export interface ApiErrorBody {
   error: {
     code: ApiErrorCode;
