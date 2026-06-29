@@ -17,7 +17,7 @@ Most fields are left blank. What matters:
 | Field | Value |
 |---|---|
 | **GitHub App name** | e.g. `Ayo CLI` — globally unique across GitHub; its slug must not collide with an existing user/org (e.g. `ayo-dev` is taken). |
-| **Homepage URL** | your repo, e.g. `https://github.com/woverfield/ayo` |
+| **Homepage URL** | your repo, e.g. `https://github.com/wkoverfield/ayo` |
 | **Callback URL** | leave blank — device flow never redirects |
 | **Expire user authorization tokens** | uncheck — Ayo uses the GitHub token once (to read your identity) then issues its own session token |
 | **Request user authorization (OAuth) during installation** | leave unchecked |

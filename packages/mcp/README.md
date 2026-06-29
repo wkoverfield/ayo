@@ -1,6 +1,6 @@
 # @ayo-dev/mcp
 
-**The [MCP](https://modelcontextprotocol.io) server for [Ayo](https://github.com/woverfield/ayo)** — lets
+**The [MCP](https://modelcontextprotocol.io) server for [Ayo](https://github.com/wkoverfield/ayo)** — lets
 Codex and Claude Code ping your teammates with work context, read their inbox,
 and hand off work, without you leaving the agent.
 
@@ -43,6 +43,6 @@ The server reads your Ayo session from `~/.ayo` (created by `ayo login`).
 
 ## Full docs
 
-See the [main repository](https://github.com/woverfield/ayo).
+See the [main repository](https://github.com/wkoverfield/ayo).
 
 MIT © Wilson Overfield

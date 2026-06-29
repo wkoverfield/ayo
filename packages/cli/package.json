@@ -4,13 +4,13 @@
   "description": "Ping your teammates from inside Codex and Claude. The ayo command + the ayod daemon.",
   "license": "MIT",
   "author": "Wilson Overfield",
-  "homepage": "https://github.com/woverfield/ayo#readme",
+  "homepage": "https://github.com/wkoverfield/ayo#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/woverfield/ayo.git",
+    "url": "git+https://github.com/wkoverfield/ayo.git",
     "directory": "packages/cli"
   },
-  "bugs": "https://github.com/woverfield/ayo/issues",
+  "bugs": "https://github.com/wkoverfield/ayo/issues",
   "keywords": ["ayo", "cli", "mcp", "claude", "codex", "hackathon", "team", "agent", "notifications"],
   "type": "module",
   "bin": {

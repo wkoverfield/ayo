@@ -43,7 +43,7 @@ Tools: `send_ayo`, `read_inbox`, `create_handoff`, `share_context`,
 
 ## Full docs
 
-See the [main repository](https://github.com/woverfield/ayo) for the architecture,
+See the [main repository](https://github.com/wkoverfield/ayo) for the architecture,
 self-hosting the relay, and the demo.
 
 MIT © Wilson Overfield
