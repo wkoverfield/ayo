@@ -37,6 +37,14 @@ independent code review of the scaffold + Layer 1.
 
 ## Board / feed (deferred from review)
 
+- **DO roster is lazily populated** — a member only enters the team DO's roster
+  when they first hit a DO endpoint (daemon connect, send, status, board). So a
+  broadcast (`ayo team "…"`) to a teammate who joined but has never connected and
+  is offline creates no delivery row for them — they still SEE it in their inbox
+  (the `to:["*"]` filter), but the send reports them as neither live nor queued,
+  and they get no live push. Fix: register members into the DO roster on join
+  (Worker → DO) so broadcasts and the board reflect all members immediately.
+
 - **Feed message fetch is bounded** (`reverse:true, limit`), but it still does one
   `delivery:` list per returned item (N extra reads, N ≤ 100) to compute
   `resolved`. And the older inbox/unread/countUnread methods still do an unbounded

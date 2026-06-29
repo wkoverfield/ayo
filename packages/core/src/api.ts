@@ -115,8 +115,11 @@ export interface InboxResponse {
   cursor: AyoId | null;
 }
 
-/** Recent team-wide activity for the live board (newest first). `resolved` is
- *  whether every recipient has resolved it — used to surface OPEN handoffs. */
+/** Recent TEAM-VISIBLE activity for the live board (newest first): broadcasts +
+ *  handoffs only — direct 1:1 pings stay private to the recipient's inbox.
+ *  `resolved` = every recipient resolved it (used to surface OPEN handoffs).
+ *  Note: the relay scans a bounded recent window, so a very DM-heavy team can
+ *  under-return (older team activity beyond the window won't appear). */
 export interface FeedItem {
   ayo: Ayo;
   resolved: boolean;

@@ -109,7 +109,8 @@ program
   });
 
 // ── team ───────────────────────────────────────────────────────────────────
-const team = program.command("team").description("Manage teams");
+const team = program.command("team").description("Broadcast to the team, or manage it (create/status)");
+team.addHelpText("after", '\nBroadcast:\n  ayo team "<message>" [--urgent]   send to the whole team');
 team
   .command("create <name>")
   .description("Create a team and get a join code")
@@ -139,6 +140,32 @@ team
         const note = m.statusText ? pc.dim(` — ${m.statusText}`) : "";
         console.log(`${dot} ${pc.bold(m.handle)} ${pc.dim(`(${m.status})`)}${note}`);
       }
+    } catch (err) {
+      fail(err);
+    }
+  });
+// `ayo team "we're cooked"` broadcasts to everyone — the default when the args
+// aren't `create`/`status`. (Commander routes unmatched args to isDefault.)
+team
+  .command("broadcast [message...]", { isDefault: true, hidden: true })
+  .option("--urgent", "urgent broadcast", false)
+  .action(async (message: string[], opts) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      const body = message.join(" ");
+      if (!body) {
+        console.log("Usage: ayo team <message>  ·  ayo team create <name>  ·  ayo team status");
+        return;
+      }
+      const res = await api.send(s, cfg.activeTeamId, {
+        to: ["*"],
+        body,
+        urgency: opts.urgent ? "urgent" : "normal",
+        context: captureContext(),
+      });
+      console.log(pc.green(`✓ team ayo sent`) + pc.dim(` (${res.deliveredTo.length} live, ${res.queuedFor.length} queued)`));
     } catch (err) {
       fail(err);
     }

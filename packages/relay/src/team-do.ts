@@ -250,15 +250,22 @@ export class TeamHub implements DurableObject {
     return Response.json(body);
   }
 
-  /** Recent team-wide activity for the live board (newest first). */
+  /** Recent team-relevant activity for the shared board (newest first). Shows
+   *  broadcasts and handoffs only; direct 1:1 pings stay private to the
+   *  recipient's inbox and never appear on the team board. */
   private async handleFeed(url: URL): Promise<Response> {
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
-    // reverse+limit fetches only the newest `limit` msgs. Without a limit,
-    // storage.list returns ALL matching keys (no cap — correct data, but it
-    // loads the entire team history into the DO's memory on every poll, an OOM
-    // risk at scale). reverse + limit gets the newest N directly and bounded.
-    const map = await this.ctx.storage.list<Ayo>({ prefix: "msg:", reverse: true, limit });
-    const recent = [...map.values()]; // already newest-first
+    // Over-fetch a bounded window (newest-first, no full-history scan / OOM) and
+    // filter. Bound = a DM-heavy team can under-return (a broadcast older than
+    // `scan` messages back won't surface) — acceptable; the board is "recent".
+    const scan = Math.min(limit * 5, 200);
+    const map = await this.ctx.storage.list<Ayo>({ prefix: "msg:", reverse: true, limit: scan });
+    // Team-visible = broadcasts (to ["*"]) and ALL handoffs (a directed handoff
+    // is intentionally public so any teammate can pick it up). Direct pings —
+    // and status-bumps — stay private to the recipient's inbox unless broadcast.
+    const recent = [...map.values()]
+      .filter((a) => a.to.includes("*") || a.kind === "handoff")
+      .slice(0, limit);
     const items = await Promise.all(
       recent.map(async (ayo) => {
         // Resolved iff every recipient that got a delivery row has resolved it.
