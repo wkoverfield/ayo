@@ -42,6 +42,11 @@ claude mcp add -s user ayo -- node /absolute/path/to/ayo/packages/mcp/dist/index
 (Once `@ayo-dev/mcp` is published, the command becomes `npx -y @ayo-dev/mcp` and
 `ayo mcp install` uses that automatically.)
 
+> In dev, the absolute path to `packages/mcp/dist/index.js` is baked into your
+> agent config at install time. If you **move the repo** or wipe
+> `packages/mcp/dist`, re-run `ayo mcp install` (and rebuild) so the path is
+> current — otherwise the agent will try to launch a server that no longer exists.
+
 ## Using it
 
 In Codex or Claude Code, just ask:
