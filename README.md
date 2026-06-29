@@ -84,6 +84,40 @@ ayo daemon stop
 ayo daemon uninstall
 ```
 
+## Try it solo (one machine, no teammate)
+
+The local relay has a dev stub that lets you be two people — no second laptop or
+GitHub account. `AYO_DIR` keeps the two personas' files separate.
+
+```bash
+# Terminal 1 — local relay (dev stub on)
+cd packages/relay && npx wrangler dev --local --port 8787
+```
+
+```bash
+# Terminals 2 & 3 — shared setup (run in each)
+cd /path/to/ayo
+export AYO_RELAY_URL=http://127.0.0.1:8787
+alias ayo="node $PWD/packages/cli/dist/ayo.js"
+```
+
+```bash
+# Terminal 2 — you
+export AYO_DIR=/tmp/ayo-you
+ayo login --handle you
+ayo team create "Self Test"     # copy the join code
+ayo daemon start                # your receiver
+
+# Terminal 3 — your alter ego
+export AYO_DIR=/tmp/ayo-pal
+ayo login --handle pal
+ayo join <CODE>
+ayo you "does this actually work?"   # → Terminal 2's machine gets a native toast
+```
+
+Then `ayo inbox` in Terminal 2. (Drop `AYO_RELAY_URL` to hit the hosted relay
+instead — but that path needs a real GitHub login per persona.)
+
 ## Packages
 
 | Package | What it is |

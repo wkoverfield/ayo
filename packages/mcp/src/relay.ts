@@ -5,11 +5,11 @@
  */
 
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 import type { InboxResponse, SendAyoRequest, SendAyoResponse } from "@ayo-dev/core";
 
-const AYO_DIR = join(homedir(), ".ayo");
+const AYO_DIR = process.env.AYO_DIR ? resolve(process.env.AYO_DIR) : join(homedir(), ".ayo");
 
 interface Session {
   token: string;
