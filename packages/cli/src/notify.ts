@@ -13,9 +13,11 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import notifier from "node-notifier";
 import type { Ayo } from "@ayo-dev/core";
+import { AYO_DIR } from "./config.js";
 
 // The Ayo mark, shipped in the package (dist/notify.js -> ../assets/ayo.png).
 // node-notifier passes it to notify-send (Linux) / SnoreToast (Windows). macOS
@@ -49,11 +51,31 @@ function osaEscape(s: string): string {
 }
 
 function macNotify(title: string, message: string, sound: boolean): void {
+  // Prefer the signed Ayo.app helper: its AppIcon IS the Ayo mark, so the toast
+  // is branded. `open -g` launches it via Launch Services (which
+  // UNUserNotificationCenter requires to recognize the bundle) in the background
+  // so it doesn't steal focus. Args go through argv (no shell), so a teammate's
+  // text can't inject.
+  // NOTE: `open` returns once Launch Services accepts the launch, BEFORE the toast
+  // is delivered, so this is fire-and-forget. The catch only covers a failed
+  // launch (helper missing/corrupt) -> fall back to osascript; it can't observe a
+  // failed post (the helper's exit code isn't visible through `open`).
+  const app = join(AYO_DIR, "Ayo.app");
+  if (existsSync(app)) {
+    try {
+      const args = ["-g", app, "--args", title, message];
+      if (sound) args.push("--sound");
+      execFileSync("open", args, { stdio: "ignore", timeout: 5000 });
+      return;
+    } catch {
+      /* fall through to osascript */
+    }
+  }
+  // osascript shows (with the Script Editor icon) but lands in Notification
+  // Center; AppleScript-escaped args + no shell. timeout so a hung osascript
+  // can't freeze the daemon's event loop.
   const script =
     `display notification "${osaEscape(message)}" with title "${osaEscape(title)}"` +
     (sound ? ` sound name "Ping"` : "");
-  // execFile (no shell) + AppleScript-escaped args → a teammate's message text
-  // can't break out of the string or inject commands. timeout so a hung
-  // osascript can't freeze the daemon's event loop.
   execFileSync("osascript", ["-e", script], { stdio: "ignore", timeout: 5000 });
 }
