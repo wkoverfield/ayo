@@ -5,6 +5,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import pc from "picocolors";
 import {
@@ -30,8 +31,18 @@ import { hackathonEnd, hackathonExport, hackathonStart, hackathonStatus } from "
 import { hooksInstall, hooksStatus, hooksUninstall } from "./hooks.js";
 import { mcpInstall, mcpStatus, mcpUninstall } from "./mcp-setup.js";
 
+// Read the real version from package.json (dist/ayo.js → ../package.json, which
+// npm always includes in the tarball). Fall back so `--version` can never throw.
+function pkgVersion(): string {
+  try {
+    return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
 const program = new Command();
-program.name("ayo").description("Ping your teammates from inside Codex and Claude.").version("0.0.0");
+program.name("ayo").description("Ping your teammates from inside Codex and Claude.").version(pkgVersion());
 
 function fail(err: unknown): never {
   if (err instanceof RelayError) console.error(pc.red(`✗ ${err.code}: ${err.message}`));
