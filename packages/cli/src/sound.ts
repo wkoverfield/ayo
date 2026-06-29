@@ -7,7 +7,7 @@
  * hash cache under $AYO_DIR/sounds/ (Phase A2). Playback is fire-and-forget.
  */
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +48,25 @@ export function playSound(file: string): void {
     }
   } catch {
     /* best-effort: a missing player must never break delivery */
+  }
+}
+
+/** Blocking play for interactive CLI commands (preview/set) — the short-lived CLI
+ *  would otherwise exit before a detached player finishes (notably on Windows).
+ *  The daemon must NEVER use this; it uses fire-and-forget playSound. */
+export function playSoundSync(file: string): void {
+  try {
+    if (process.platform === "darwin") {
+      execFileSync("afplay", [file], { stdio: "ignore", timeout: 5000 });
+    } else if (process.platform === "win32") {
+      const esc = file.replace(/'/g, "''");
+      execFileSync("powershell", ["-NoProfile", "-c", `(New-Object Media.SoundPlayer '${esc}').PlaySync()`], { stdio: "ignore", timeout: 5000 });
+    } else {
+      const p = linuxPlayer();
+      if (p) execFileSync(p.cmd, [...p.args, file], { stdio: "ignore", timeout: 5000 });
+    }
+  } catch {
+    /* best-effort */
   }
 }
 

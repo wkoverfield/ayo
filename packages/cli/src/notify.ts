@@ -92,5 +92,10 @@ function macNotify(title: string, message: string, sound: boolean): void {
   const script =
     `display notification "${osaEscape(message)}" with title "${osaEscape(title)}"` +
     (sound ? ` sound name "Ping"` : "");
-  execFileSync("osascript", ["-e", script], { stdio: "ignore", timeout: 5000 });
+  try {
+    execFileSync("osascript", ["-e", script], { stdio: "ignore", timeout: 5000 });
+  } catch {
+    /* best-effort: osascript can fail (locked screen / Focus / permissions) —
+       don't throw out of notifyAyo, which would skip the daemon's notified ack. */
+  }
 }

@@ -8,7 +8,7 @@ import pc from "picocolors";
 import { SOUND_PRESETS } from "@ayo-dev/core";
 import { loadConfig, saveConfig, requireSession } from "./config.js";
 import { api, RelayError } from "./client.js";
-import { presetPath, playSound } from "./sound.js";
+import { presetPath, playSoundSync } from "./sound.js";
 
 function oops(err: unknown): void {
   console.error(pc.red(`✗ ${err instanceof RelayError ? err.message : (err as Error).message}`));
@@ -25,7 +25,7 @@ export function soundList(): void {
 export function soundPreview(id: string): void {
   const p = presetPath(id);
   if (!p) return void console.log(pc.red(`✗ no preset "${id}". \`ayo sound list\`.`));
-  playSound(p);
+  playSoundSync(p);
   console.log(pc.dim(`▶ ${id}`));
 }
 
@@ -35,7 +35,7 @@ export async function soundSet(id: string): Promise<void> {
   try {
     const s = requireSession();
     await api.setSound(s, { kind: "preset", id });
-    playSound(p);
+    playSoundSync(p);
     console.log(pc.green(`✓ your ayo now sounds like "${id}"`) + pc.dim(" — teammates hear this when you ping."));
   } catch (err) {
     oops(err);

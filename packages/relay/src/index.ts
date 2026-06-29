@@ -214,6 +214,10 @@ async function forwardToTeam(
   target.search = original.search;
 
   const headers = new Headers(req.headers);
+  // Strip any client-supplied x-ayo-* — these are identity/trust headers only the
+  // Worker may set. Without this, a client with no profile sound could forge
+  // x-ayo-sound on a send (or attempt x-ayo-internal). The DO trusts these.
+  for (const h of ["x-ayo-user", "x-ayo-handle", "x-ayo-team", "x-ayo-sound", "x-ayo-internal"]) headers.delete(h);
   headers.set("x-ayo-user", userId);
   headers.set("x-ayo-handle", handle);
   headers.set("x-ayo-team", teamId);
