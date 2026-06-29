@@ -6,17 +6,31 @@ independent code review of the scaffold + Layer 1.
 
 ## macOS notification icon
 
-The Ayo mark now ships at `packages/cli/assets/ayo.png` and is wired into the
-Windows/Linux notification path (`notify.ts` → node-notifier `icon`). **macOS does
-not show it:** the mac path uses `osascript … display notification`, which always
-renders the icon of the posting app (Script Editor) and has no parameter for a
-custom image. To brand the macOS toast, either (a) ship a code-signed + notarized
-`Ayo.app` helper that posts via `UNUserNotificationCenter` (macOS shows that
-bundle's AppIcon), or (b) shell out to a user-installed, signed `terminal-notifier`
-with `-appIcon`/`-contentImage` (adds an install dependency + reliability risk —
-the reason we left it). Also unverified: the Windows toast path has never run on a
-real Windows box, and app identity there ideally wants a registered AppUserModelID
-(node-notifier `appID` + a Start Menu shortcut), not just the `icon`.
+The Ayo mark ships at `packages/cli/assets/ayo.png` and brands the Windows/Linux
+path (`notify.ts` → node-notifier `icon`).
+
+**Phase 2a — DONE (the icon shows on a machine with the helper installed).** osascript
+can't set a notification icon (it renders the posting app's icon — Script Editor),
+so we ship a tiny signed `Ayo.app` helper whose AppIcon *is* the Ayo mark and post
+through it. Source: `packages/cli/native/macos/AyoNotifier/` (Swift +
+`UNUserNotificationCenter`); built/signed via `build-notifier.sh`. `notify.ts`
+launches it with `open -g <Ayo.app> --args <title> <body>` (Launch Services launch
+is required — `UNUserNotificationCenter` rejects a bare-exec'd binary) and falls
+back to osascript if it isn't installed. First run prompts for notification
+permission; the first toast right after granting can drop (system settling) — fine
+for the daemon, which is long-authorized by the time it notifies.
+
+**Phase 2b — TODO (distribute to everyone).** 2a signs with an *Apple Development*
+cert (local machines only). To ship the helper on npm it must be signed with a
+**Developer ID Application** cert and **notarized** (`build-notifier.sh NOTARIZE=1`
+already does this given the cert + a stored `ayo-notary` keychain profile). Then a
+darwin-only postinstall (or an `ayo notifier install` command) downloads the
+notarized `Ayo.app` from a GitHub release into `$AYO_DIR`. Needs: Wilson to create
+the Developer ID cert + `notarytool store-credentials`.
+
+Also unverified: the Windows toast path has never run on a real box, and app
+identity there ideally wants a registered AppUserModelID (node-notifier `appID` +
+a Start Menu shortcut), not just `icon`.
 
 ## Relay hardening (deferred from pre-public security review, 2026-06-29)
 
