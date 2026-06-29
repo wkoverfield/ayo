@@ -1,6 +1,6 @@
 {
   "name": "@ayo-dev/mcp",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Ayo MCP server — send_ayo, read_inbox, create_handoff, share_context for Codex & Claude.",
   "license": "MIT",
   "author": "Wilson Overfield",
