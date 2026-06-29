@@ -113,7 +113,12 @@ function claudeInstalled(): boolean {
  *  quoted TOML literals can't represent a `'` in a path or Windows backslashes,
  *  so we must use basic strings here. */
 function tomlString(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `"${s
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t")}"`;
 }
 
 function codexNotifyLine(): string {
