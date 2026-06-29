@@ -11,7 +11,7 @@ repo, branch, and a one-line "why," straight from the tool they're already in.
 npm install -g @ayo-dev/cli
 ayo login                       # GitHub device flow
 ayo team create "Hack Midwest"  # share the join code
-ayo daemon start                # background receiver → native notifications
+ayo daemon install              # receiver as a login service → survives reboots
 ```
 
 ## What you get
