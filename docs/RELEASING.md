@@ -24,11 +24,11 @@ git checkout main && git pull
 pnpm release
 ```
 
-`pnpm release` runs `pnpm build` then `pnpm -r publish --access public`, which:
+`pnpm release` runs `pnpm -r publish --access public`, which:
 
-- builds every package (and each package's `prepack` rebuilds its own `dist`,
-  so the tarball is never stale even on a bare `pnpm -r publish`),
 - publishes in dependency order (`core` before `cli`/`mcp`),
+- rebuilds each package's `dist` via its `prepack` hook right before packing, so
+  the tarball is never stale (this also covers a bare `pnpm -r publish`),
 - rewrites the `workspace:^` dependency on `@ayo-dev/core` to the real
   version range (`^0.1.0`) in the published tarballs,
 - skips the `private` relay package.
