@@ -15,7 +15,9 @@ func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .u
 let args = CommandLine.arguments
 let title = args.count > 1 ? args[1] : "Ayo"
 let body = args.count > 2 ? args[2] : ""
-let wantSound = args.contains("--sound")
+// Scan only past the positional [path, title, body] so a body of "--sound" can't
+// spuriously enable sound.
+let wantSound = args.dropFirst(3).contains("--sound")
 
 let center = UNUserNotificationCenter.current()
 

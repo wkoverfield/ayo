@@ -19,9 +19,16 @@ PLIST="$HERE/AyoNotifier/Info.plist"
 ICON_PNG="${ICON_PNG:-$HERE/../../assets/ayo.png}"
 OUT="${OUT:-$HERE/build}"
 APP="$OUT/Ayo.app"
-IDENTITY="${IDENTITY:-Apple Development: Wilson Overfield (5V2KH692R7)}"
+IDENTITY="${IDENTITY:-}"
 NOTARIZE="${NOTARIZE:-0}"
 INSTALL=0; [ "${1:-}" = "--install" ] && INSTALL=1
+
+if [ -z "$IDENTITY" ]; then
+  echo "error: set IDENTITY to your codesigning certificate name. List yours with:" >&2
+  echo "  security find-identity -v -p codesigning" >&2
+  echo "then re-run, e.g.:  IDENTITY='Apple Development: Your Name (TEAMID)' $0" >&2
+  exit 1
+fi
 
 echo "→ compiling AyoNotifier…"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

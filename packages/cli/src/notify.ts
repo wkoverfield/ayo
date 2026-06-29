@@ -51,11 +51,15 @@ function osaEscape(s: string): string {
 }
 
 function macNotify(title: string, message: string, sound: boolean): void {
-  // Prefer the signed Ayo.app helper (its AppIcon IS the Ayo mark, so the toast
-  // is branded). `open -g` launches it via Launch Services — required for
-  // UNUserNotificationCenter to recognize the bundle — in the background so it
-  // doesn't steal focus. Args go through argv (no shell), so a teammate's text
-  // can't inject. Falls back to osascript if the helper isn't installed.
+  // Prefer the signed Ayo.app helper: its AppIcon IS the Ayo mark, so the toast
+  // is branded. `open -g` launches it via Launch Services (which
+  // UNUserNotificationCenter requires to recognize the bundle) in the background
+  // so it doesn't steal focus. Args go through argv (no shell), so a teammate's
+  // text can't inject.
+  // NOTE: `open` returns once Launch Services accepts the launch, BEFORE the toast
+  // is delivered, so this is fire-and-forget. The catch only covers a failed
+  // launch (helper missing/corrupt) -> fall back to osascript; it can't observe a
+  // failed post (the helper's exit code isn't visible through `open`).
   const app = join(AYO_DIR, "Ayo.app");
   if (existsSync(app)) {
     try {
