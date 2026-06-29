@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import notifier from "node-notifier";
 import type { Ayo } from "@ayo-dev/core";
 import { AYO_DIR, loadConfig } from "./config.js";
-import { playSound, resolveSound } from "./sound.js";
+import { cachedCustomPath, ensureCustomSound, playSound, presetPath } from "./sound.js";
 
 // The Ayo mark, shipped in the package (dist/notify.js -> ../assets/ayo.png).
 // node-notifier passes it to notify-send (Linux) / SnoreToast (Windows). macOS
@@ -35,10 +35,10 @@ export function notifyAyo(ayo: Ayo): void {
   const title = `${urgent ? "🚨 " : ""}Ayo from ${ayo.from.handle}${where}`;
 
   // Signature sound: play the sender's chosen sound (unless the recipient muted
-  // it). When one plays, keep the toast itself silent so they don't double up.
-  const sig = sigSound(ayo);
-  if (sig) playSound(sig);
-  const toastSound = urgent && !sig;
+  // it). When one is being handled, keep the toast itself silent so they don't
+  // double up.
+  const willSound = playSignatureSound(ayo);
+  const toastSound = urgent && !willSound;
 
   if (process.platform === "darwin") {
     macNotify(title, ayo.body, toastSound);
@@ -47,12 +47,31 @@ export function notifyAyo(ayo: Ayo): void {
   }
 }
 
-/** The sender's sound file to play, honoring the recipient's local mute prefs. */
-function sigSound(ayo: Ayo): string | null {
+/**
+ * Play the sender's signature sound, honoring the recipient's local mute prefs.
+ * Returns true if a sound is being handled (so the toast stays silent). A custom
+ * clip plays from cache, or is fetched+verified on first receipt then played.
+ */
+function playSignatureSound(ayo: Ayo): boolean {
   const cfg = loadConfig();
-  if (cfg.muteSounds) return null;
-  if (cfg.mutedSenders?.includes(ayo.from.handle)) return null;
-  return resolveSound(ayo.sound);
+  if (cfg.muteSounds || cfg.mutedSenders?.includes(ayo.from.handle)) return false;
+  const sound = ayo.sound;
+  if (!sound) return false;
+  if (sound.kind === "preset") {
+    const p = presetPath(sound.id);
+    if (p) playSound(p);
+    return p !== null;
+  }
+  // custom: play from cache, or fetch+verify on first receipt then play.
+  const cached = cachedCustomPath(sound.hash);
+  if (cached) {
+    playSound(cached);
+  } else {
+    ensureCustomSound(sound).then((p) => {
+      if (p) playSound(p);
+    });
+  }
+  return true;
 }
 
 /** Escape a string for embedding in an AppleScript double-quoted literal. */

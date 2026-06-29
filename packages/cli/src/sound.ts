@@ -8,12 +8,13 @@
  */
 
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AyoSound } from "@ayo-dev/core";
 import { SOUND_PRESETS } from "@ayo-dev/core";
-import { AYO_DIR } from "./config.js";
+import { AYO_DIR, loadConfig, loadSession } from "./config.js";
 
 // dist/sound.js -> ../assets/sounds/ (shipped in the npm tarball via `files`).
 const PRESET_DIR = fileURLToPath(new URL("../assets/sounds/", import.meta.url));
@@ -25,13 +26,43 @@ export function presetPath(id: string): string | null {
   return existsSync(p) ? p : null;
 }
 
+/** A custom clip's cached path (keyed by content hash), or null if not yet fetched. */
+export function cachedCustomPath(hash: string): string | null {
+  const p = join(CACHE_DIR, `${hash}.wav`);
+  return existsSync(p) ? p : null;
+}
+
 /** Resolve an AyoSound to a local WAV path, or null if not locally playable. */
 export function resolveSound(sound: AyoSound | null | undefined): string | null {
   if (!sound) return null;
   if (sound.kind === "preset") return presetPath(sound.id);
-  // custom (A2): play from the hash cache if the daemon has already fetched it.
-  const cached = join(CACHE_DIR, `${sound.hash}.wav`);
-  return existsSync(cached) ? cached : null;
+  return cachedCustomPath(sound.hash);
+}
+
+/**
+ * Fetch a custom clip into the hash cache if missing, verifying integrity against
+ * its hash. Returns the local path, or null on any failure (best-effort — a sound
+ * must never break delivery). Cached by hash, so a sender changing their clip just
+ * yields a new file.
+ */
+export async function ensureCustomSound(sound: { url: string; hash: string }): Promise<string | null> {
+  const cached = cachedCustomPath(sound.hash);
+  if (cached) return cached;
+  try {
+    const session = loadSession();
+    if (!session) return null;
+    const { relayUrl } = loadConfig();
+    const res = await fetch(`${relayUrl}${sound.url}`, { headers: { authorization: `Bearer ${session.token}` } });
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (createHash("sha256").update(buf).digest("hex") !== sound.hash) return null; // integrity
+    mkdirSync(CACHE_DIR, { recursive: true });
+    const p = join(CACHE_DIR, `${sound.hash}.wav`);
+    writeFileSync(p, buf);
+    return p;
+  } catch {
+    return null;
+  }
 }
 
 /** Play a WAV fire-and-forget via the platform's CLI player. Never throws. */

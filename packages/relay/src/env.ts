@@ -3,6 +3,8 @@ import type { ApiErrorBody, ApiErrorCode } from "@ayo-dev/core";
 export interface Env {
   TEAM: DurableObjectNamespace;
   AYO_KV: KVNamespace;
+  /** Custom notification-sound clips, keyed `sound/<userId>.wav`. */
+  AYO_SOUNDS: R2Bucket;
   /** GitHub OAuth App client id. The device flow needs no client secret. */
   GITHUB_CLIENT_ID?: string;
   /** Must be "1" to enable the no-GitHub dev auth stub. Never set in prod. */

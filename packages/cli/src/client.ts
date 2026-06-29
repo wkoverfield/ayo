@@ -3,6 +3,7 @@
  */
 
 import type {
+  AyoSound,
   CreateTeamResponse,
   DevicePollResponse,
   DeviceStartResponse,
@@ -101,4 +102,18 @@ export const api = {
 
   setSound: (s: Session, body: SetSoundRequest) =>
     call<{ sound: SetSoundRequest }>("/v1/me/sound", { method: "PUT", body, token: s.token }),
+
+  // Raw WAV upload (not JSON), so it bypasses `call`.
+  uploadSound: async (s: Session, wav: Uint8Array): Promise<{ sound: AyoSound }> => {
+    const { relayUrl } = loadConfig();
+    const res = await fetch(`${relayUrl}/v1/me/sound`, {
+      method: "PUT",
+      headers: { "content-type": "audio/wav", authorization: `Bearer ${s.token}` },
+      body: wav,
+    });
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok) throw new RelayError(data?.error?.code ?? "http_error", data?.error?.message ?? `HTTP ${res.status}`);
+    return data as { sound: AyoSound };
+  },
 };

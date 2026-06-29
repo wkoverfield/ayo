@@ -4,6 +4,7 @@
  * profile (the relay stamps it onto each Ayo); mute prefs are local (recipient wins).
  */
 
+import { existsSync, readFileSync } from "node:fs";
 import pc from "picocolors";
 import { SOUND_PRESETS } from "@ayo-dev/core";
 import { loadConfig, saveConfig, requireSession } from "./config.js";
@@ -37,6 +38,21 @@ export async function soundSet(id: string): Promise<void> {
     await api.setSound(s, { kind: "preset", id });
     playSoundSync(p);
     console.log(pc.green(`✓ your ayo now sounds like "${id}"`) + pc.dim(" — teammates hear this when you ping."));
+  } catch (err) {
+    oops(err);
+  }
+}
+
+export async function soundUpload(file: string): Promise<void> {
+  if (!existsSync(file)) return void console.log(pc.red(`✗ no file at ${file}`));
+  if (!file.toLowerCase().endsWith(".wav")) return void console.log(pc.red("✗ must be a .wav file (≤ 1 MB, ~2s)."));
+  const buf = readFileSync(file);
+  if (buf.byteLength > 1024 * 1024) return void console.log(pc.red("✗ too big — keep it under 1 MB."));
+  try {
+    const s = requireSession();
+    await api.uploadSound(s, buf);
+    playSoundSync(file); // let them hear what they just set
+    console.log(pc.green("✓ your custom ayo sound is set") + pc.dim(" — teammates hear this when you ping."));
   } catch (err) {
     oops(err);
   }
