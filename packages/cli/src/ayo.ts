@@ -110,6 +110,7 @@ program
 
 // ── team ───────────────────────────────────────────────────────────────────
 const team = program.command("team").description("Broadcast to the team, or manage it (create/status)");
+team.addHelpText("after", '\nBroadcast:\n  ayo team "<message>" [--urgent]   send to the whole team');
 team
   .command("create <name>")
   .description("Create a team and get a join code")
