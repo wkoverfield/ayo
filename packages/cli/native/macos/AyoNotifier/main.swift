@@ -48,12 +48,13 @@ func enqueueAction(_ action: String, ctx: Ctx?, dir: String) {
   line += "\n"
   let path = dir + "/action-queue.jsonl"
   try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-  if let fh = FileHandle(forWritingAtPath: path) {
-    fh.seekToEndOfFile()
-    fh.write(line.data(using: .utf8)!)
-    try? fh.close()
-  } else {
-    try? line.data(using: .utf8)!.write(to: URL(fileURLWithPath: path))
+  // POSIX O_APPEND: a single write() is atomic for records < PIPE_BUF, so two
+  // helper instances clicking at once can't interleave/corrupt a JSONL line.
+  let bytes = Array(line.utf8)
+  let fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0o644)
+  if fd >= 0 {
+    _ = bytes.withUnsafeBufferPointer { Darwin.write(fd, $0.baseAddress, $0.count) }
+    close(fd)
   }
 }
 
@@ -67,8 +68,10 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
       UNNotificationCategory(identifier: CATEGORY, actions: [copy, agent], intentIdentifiers: [], options: [])
     ])
     center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+      // These callbacks run on a background queue; bounce exit() to main so it
+      // can't race AppKit teardown on the main thread.
       if let error = error { errLog("ayo-notifier: auth: \(error.localizedDescription)") }
-      guard granted else { exit(2) }
+      guard granted else { DispatchQueue.main.async { exit(2) }; return }
       let content = UNMutableNotificationContent()
       content.title = title
       content.body = body
@@ -79,11 +82,15 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
       content.userInfo = ["ctx": ctxJSON ?? "", "ayoDir": ayoDir]
       let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
       center.add(req) { addErr in
-        if let addErr = addErr { errLog("ayo-notifier: \(addErr.localizedDescription)"); exit(3) }
+        if let addErr = addErr {
+          errLog("ayo-notifier: \(addErr.localizedDescription)")
+          DispatchQueue.main.async { exit(3) }
+        }
       }
-      // Stay alive to receive the click; exit if it's ignored for a while so we
-      // don't linger (the toast remains clickable in Notification Center, which
-      // relaunches us via the documented fallback).
+      // Stay alive to receive the click. After a while, exit so we don't linger —
+      // the toast stays in Notification Center, and a later click MAY relaunch us
+      // (best-effort; if it does, context is recovered from the notification's
+      // userInfo since argv is gone on a relaunch).
       DispatchQueue.main.asyncAfter(deadline: .now() + 90) { exit(0) }
     }
   }

@@ -61,7 +61,7 @@ function formatContext(ayo: Ayo): string {
   if (c?.note) lines.push(`note: ${c.note}`);
   if (c?.changedFiles?.length) lines.push(`changed: ${c.changedFiles.slice(0, 12).join(", ")}`);
   if (c?.diffStat) lines.push(c.diffStat);
-  if (c?.links?.length) lines.push(...c.links);
+  if (c?.links?.length) lines.push(...c.links.slice(0, 10));
   return lines.join("\n");
 }
 
