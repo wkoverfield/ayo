@@ -42,8 +42,8 @@ function parseSound(header: string | null): AyoSound | null {
   try {
     const s = JSON.parse(header) as AyoSound;
     if (s?.kind === "preset" && typeof s.id === "string") return s;
-    // custom clips arrive in Phase A2 — add that branch alongside Worker-side
-    // validation then; for now only presets are stamped.
+    // Custom: the Worker only stamps refs it built from a validated R2 upload.
+    if (s?.kind === "custom" && typeof s.url === "string" && typeof s.hash === "string") return s;
   } catch {
     /* ignore malformed */
   }

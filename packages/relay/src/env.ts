@@ -3,6 +3,8 @@ import type { ApiErrorBody, ApiErrorCode } from "@ayo-dev/core";
 export interface Env {
   TEAM: DurableObjectNamespace;
   AYO_KV: KVNamespace;
+  /** Custom notification-sound clips, keyed `sound/<userId>.wav`. */
+  AYO_SOUNDS: R2Bucket;
   /** GitHub OAuth App client id. The device flow needs no client secret. */
   GITHUB_CLIENT_ID?: string;
   /** Must be "1" to enable the no-GitHub dev auth stub. Never set in prod. */
@@ -23,6 +25,7 @@ const ERROR_STATUS: Record<ApiErrorCode, number> = {
   unauthorized: 401,
   invalid_token: 401,
   team_not_found: 404,
+  not_found: 404,
   not_a_member: 403,
   unknown_recipient: 400,
   bad_request: 400,

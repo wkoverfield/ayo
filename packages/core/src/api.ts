@@ -25,6 +25,7 @@ export type ApiErrorCode =
   | "unauthorized"
   | "invalid_token"
   | "team_not_found"
+  | "not_found"
   | "not_a_member"
   | "unknown_recipient"
   | "bad_request"

@@ -30,7 +30,7 @@ import { board } from "./board.js";
 import { hackathonEnd, hackathonExport, hackathonStart, hackathonStatus } from "./hackathon.js";
 import { hooksInstall, hooksStatus, hooksUninstall } from "./hooks.js";
 import { mcpInstall, mcpStatus, mcpUninstall } from "./mcp-setup.js";
-import { soundList, soundMute, soundPreview, soundSet, soundStatus, soundUnmute } from "./sound-setup.js";
+import { soundList, soundMute, soundPreview, soundSet, soundStatus, soundUnmute, soundUpload } from "./sound-setup.js";
 
 // Read the real version from package.json (dist/ayo.js → ../package.json, which
 // npm always includes in the tarball). Fall back so `--version` can never throw.
@@ -343,6 +343,7 @@ const sound = program.command("sound").description("Your signature sound — wha
 sound.command("list").description("List the preset sounds").action(() => soundList());
 sound.command("preview <id>").description("Hear a preset").action((id: string) => soundPreview(id));
 sound.command("set <id>").description("Make a preset your signature sound").action((id: string) => soundSet(id));
+sound.command("upload <file>").description("Upload your own WAV (≤ 1 MB, ~2s) as your signature sound").action((f: string) => soundUpload(f));
 sound.command("status").description("Show your sound + mute settings").action(() => soundStatus());
 sound.command("mute [handle]").description("Mute all incoming sounds, or one sender").action((h?: string) => soundMute(h));
 sound.command("unmute [handle]").description("Unmute all, or one sender").action((h?: string) => soundUnmute(h));

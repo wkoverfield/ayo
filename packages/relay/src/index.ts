@@ -28,6 +28,7 @@ import {
   putUser,
 } from "./auth.js";
 import { githubDeviceStart, githubDevicePoll, githubGetUser } from "./github.js";
+import { validateWav } from "./sounds.js";
 import {
   addMember,
   createTeam,
@@ -70,13 +71,41 @@ export default {
       }
 
       // Set your signature sound (relay stamps it onto each Ayo you send).
+      // audio/wav body = custom upload; JSON body = preset id or null (clear).
       if (path === "/v1/me/sound" && req.method === "PUT") {
         const user = await loadUser(env, userId);
         if (!user) return apiError("invalid_token", "Session user not found.");
+        const ct = req.headers.get("content-type")?.split(";")[0]?.trim();
+        if (ct === "audio/wav") {
+          const buf = await req.arrayBuffer();
+          const v = await validateWav(buf);
+          if (!v.ok) return apiError(v.code, v.message);
+          await env.AYO_SOUNDS.put(`sound/${userId}.wav`, buf, {
+            httpMetadata: { contentType: "audio/wav", cacheControl: "public, max-age=31536000, immutable" },
+            sha256: v.hash,
+          });
+          // Hash in the URL → each upload is a new URL, cache-busting the CDN + daemon.
+          const sound: AyoSound = { kind: "custom", url: `/v1/sounds/${userId}?h=${v.hash}`, hash: v.hash };
+          await putUser(env, { ...user, sound });
+          return json({ sound });
+        }
         const sound = validateSound(await req.json().catch(() => undefined));
         if (sound === undefined) return apiError("bad_request", "Unknown sound.");
         await putUser(env, { ...user, sound });
         return json({ sound });
+      }
+
+      // Serve a user's custom sound from R2 (immutable, hash-addressed).
+      const soundGet = path.match(/^\/v1\/sounds\/(user_[^/]+)$/);
+      if (soundGet && req.method === "GET") {
+        const obj = await env.AYO_SOUNDS.get(`sound/${soundGet[1]}.wav`);
+        if (!obj) return apiError("not_found", "No sound for that user.");
+        const headers = new Headers();
+        obj.writeHttpMetadata(headers);
+        headers.set("etag", obj.httpEtag);
+        // Don't let a browser MIME-sniff user-uploaded bytes away from audio/wav.
+        headers.set("X-Content-Type-Options", "nosniff");
+        return new Response(obj.body, { headers });
       }
 
       if (path === "/v1/teams" && req.method === "POST") {
