@@ -94,6 +94,10 @@ export class TeamHub implements DurableObject {
     const handle = req.headers.get("x-ayo-handle") ?? "";
     await this.rememberMember(userId, handle);
 
+    // rememberMember (above) already added the caller to the roster — this lets
+    // the Worker register a member into the DO on join, before they've otherwise
+    // interacted, so broadcasts/board/nudges see them immediately.
+    if (path === "/internal/register") return Response.json({ ok: true });
     if (path === "/internal/stream") return this.handleStream(userId, handle);
     if (path === "/internal/ayo" && req.method === "POST") return this.handleSend(req, userId, handle);
     if (path === "/internal/inbox" && req.method === "GET") return this.handleInbox(url, userId, handle);
