@@ -16,6 +16,8 @@ import type {
   Delivery,
   DeliveryState,
   FeedResponse,
+  HackathonResponse,
+  HackathonState,
   Handle,
   InboxResponse,
   MemberPresence,
@@ -25,6 +27,8 @@ import type {
   SendAyoResponse,
   ServerFrame,
   SetStatusRequest,
+  StartHackathonRequest,
+  TimelineResponse,
   UserId,
 } from "@ayo-dev/core";
 import { canAdvance, newAyoId } from "@ayo-dev/core";
@@ -40,6 +44,35 @@ interface Member {
 interface SocketMeta {
   userId: UserId;
   handle: Handle;
+}
+
+/** Stored hackathon state (internal — adds teamId + fired milestones to the
+ *  public HackathonState). */
+interface HackathonRecord extends HackathonState {
+  teamId: string;
+  fired: number[]; // minutes-before-end milestones already nudged
+}
+
+/** Minutes before the deadline that fire a team nudge. 0 = time's up. */
+const MILESTONES = [60, 30, 10, 0];
+
+function publicHackathon(r: HackathonRecord): HackathonState {
+  return { name: r.name, endsAt: r.endsAt, startedAt: r.startedAt };
+}
+
+function milestoneMessage(minsBefore: number): string {
+  switch (minsBefore) {
+    case 60:
+      return "⏰ T-minus 1 hour — what's not merged yet?";
+    case 30:
+      return "⏰ 30 minutes left — start wrapping up.";
+    case 10:
+      return "⏰ 10 minutes — lock it in.";
+    case 0:
+      return "⏰ Time's up! Hands off keyboards 🎉";
+    default:
+      return `⏰ ${minsBefore} minutes left.`;
+  }
 }
 
 export class TeamHub implements DurableObject {
@@ -67,6 +100,12 @@ export class TeamHub implements DurableObject {
     if (path === "/internal/members" && req.method === "GET") return this.handleMembers();
     if (path === "/internal/feed" && req.method === "GET") return this.handleFeed(url);
     if (path === "/internal/status" && req.method === "PUT") return this.handleStatus(req, userId, handle);
+    if (path === "/internal/timeline" && req.method === "GET") return this.handleTimeline();
+    if (path === "/internal/hackathon") {
+      if (req.method === "GET") return this.handleHackathonGet();
+      if (req.method === "PUT") return this.handleHackathonStart(req);
+      if (req.method === "DELETE") return this.handleHackathonEnd();
+    }
 
     const stateMatch = path.match(/^\/internal\/ayo\/(ayo_[^/]+)\/(read|resolve)$/);
     if (stateMatch && req.method === "POST") {
@@ -278,6 +317,94 @@ export class TeamHub implements DurableObject {
       }),
     );
     return Response.json({ items } satisfies FeedResponse);
+  }
+
+  // ── Hackathon mode ─────────────────────────────────────────────────────────
+
+  private async handleHackathonGet(): Promise<Response> {
+    const rec = await this.ctx.storage.get<HackathonRecord>("hackathon");
+    return Response.json({ hackathon: rec ? publicHackathon(rec) : null } satisfies HackathonResponse);
+  }
+
+  private async handleHackathonStart(req: Request): Promise<Response> {
+    const input = (await req.json().catch(() => null)) as StartHackathonRequest | null;
+    const endsMs = input ? new Date(input.endsAt).getTime() : NaN;
+    if (!input?.name || !Number.isFinite(endsMs) || endsMs <= Date.now()) {
+      return apiError("bad_request", "A hackathon needs a name and a future endsAt.");
+    }
+    const teamId = req.headers.get("x-ayo-team") as string;
+    // Milestones already in the past at start are pre-marked fired — don't nudge
+    // "1 hour left" when the sprint started with only minutes on the clock.
+    const fired = MILESTONES.filter((m) => endsMs - m * 60_000 <= Date.now());
+    const rec: HackathonRecord = { name: input.name, endsAt: input.endsAt, startedAt: new Date().toISOString(), teamId, fired };
+    await this.ctx.storage.put("hackathon", rec);
+    await this.scheduleNextMilestone(rec);
+    return Response.json({ hackathon: publicHackathon(rec) } satisfies HackathonResponse);
+  }
+
+  private async handleHackathonEnd(): Promise<Response> {
+    await this.ctx.storage.delete("hackathon");
+    await this.ctx.storage.deleteAlarm();
+    return Response.json({ hackathon: null } satisfies HackathonResponse);
+  }
+
+  /** Full team-relevant event log, oldest-first, for `ayo hackathon export`. */
+  private async handleTimeline(): Promise<Response> {
+    const rec = await this.ctx.storage.get<HackathonRecord>("hackathon");
+    const map = await this.ctx.storage.list<Ayo>({ prefix: "msg:", reverse: true, limit: 1000 });
+    const events = [...map.values()]
+      .filter((a) => a.to.includes("*") || a.kind === "handoff") // team-relevant, like the board
+      .reverse(); // oldest-first for a readable timeline
+    return Response.json({ hackathon: rec ? publicHackathon(rec) : null, events } satisfies TimelineResponse);
+  }
+
+  /** Schedule the DO alarm for the next un-fired milestone (if any remain). */
+  private async scheduleNextMilestone(rec: HackathonRecord): Promise<void> {
+    const ends = new Date(rec.endsAt).getTime();
+    const now = Date.now();
+    const next = MILESTONES.filter((m) => !rec.fired.includes(m))
+      .map((m) => ends - m * 60_000)
+      .filter((t) => t > now)
+      .sort((a, b) => a - b)[0];
+    if (next != null) await this.ctx.storage.setAlarm(next);
+  }
+
+  /** Fired by the runtime at a scheduled milestone — broadcast the T-minus nudge. */
+  async alarm(): Promise<void> {
+    const rec = await this.ctx.storage.get<HackathonRecord>("hackathon");
+    if (!rec) return;
+    const ends = new Date(rec.endsAt).getTime();
+    const now = Date.now();
+    const due = MILESTONES.filter((m) => !rec.fired.includes(m) && now >= ends - m * 60_000).sort((a, b) => b - a);
+    for (const m of due) {
+      await this.broadcastSystem(milestoneMessage(m), rec.teamId);
+      rec.fired.push(m);
+    }
+    await this.ctx.storage.put("hackathon", rec);
+    await this.scheduleNextMilestone(rec);
+  }
+
+  /** A system Ayo from "ayo" to the whole team (milestone nudges). */
+  private async broadcastSystem(body: string, teamId: string): Promise<void> {
+    const ayo: Ayo = {
+      id: newAyoId(),
+      teamId: teamId as Ayo["teamId"],
+      from: { id: "user_system" as UserId, handle: "ayo", name: "Ayo" },
+      to: ["*"],
+      kind: "ping",
+      body,
+      urgency: "urgent",
+      replyTo: null,
+      expiresAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    await this.ctx.storage.put(`msg:${ayo.id}`, ayo);
+    await this.env.AYO_KV.put(`ayoteam:${ayo.id}`, teamId, { expirationTtl: 60 * 60 * 24 * 30 });
+    for (const m of await this.allMembers()) {
+      await this.setDelivery(ayo.id, m.userId, "sent");
+      const frame: ServerFrame = { t: "ayo", ayo };
+      for (const s of this.socketsForUser(m.userId)) s.send(JSON.stringify(frame));
+    }
   }
 
   private async handleStatus(req: Request, userId: UserId, handle: Handle): Promise<Response> {
