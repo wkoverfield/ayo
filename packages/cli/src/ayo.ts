@@ -288,7 +288,8 @@ program
 program
   .command("board")
   .description("Live team dashboard — presence, status, open handoffs, recent activity")
-  .action(() => board());
+  .option("--once", "print one frame and exit (for piping / scripts)")
+  .action((opts) => board({ once: !!opts.once }));
 
 // ── handoff (the hero: hand off your work with full context) ─────────────────
 program

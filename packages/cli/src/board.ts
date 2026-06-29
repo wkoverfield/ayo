@@ -2,6 +2,10 @@
  * `ayo board` — a live team dashboard. Polls the roster (presence/status) and
  * the team feed (recent Ayos + open handoffs) and redraws on an interval, in the
  * terminal's alternate screen buffer so your scrollback is left untouched.
+ *
+ * Terminal state is restored on EVERY exit path — clean quit (q/Ctrl-C), SIGINT,
+ * SIGTERM, an uncaught error in the loop, or any process.exit — so the user is
+ * never left with a stuck alt screen / hidden cursor / raw mode.
  */
 
 import pc from "picocolors";
@@ -18,7 +22,9 @@ const WIDTH = 66;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function rel(iso: string): string {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const s = Math.floor((Date.now() - t) / 1000);
   if (s < 5) return "now";
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
@@ -27,7 +33,7 @@ function rel(iso: string): string {
 }
 
 function truncate(s: string, n: number): string {
-  const flat = s.replace(/\s+/g, " ").trim();
+  const flat = (s ?? "").replace(/\s+/g, " ").trim();
   return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
 }
 
@@ -70,7 +76,7 @@ function render(team: string, members: MemberPresence[], items: FeedItem[]): str
   if (items.length === 0) out.push(pc.dim("    (quiet so far)"));
   for (const i of items.slice(0, 6)) {
     const a = i.ayo;
-    const icon = a.kind === "handoff" ? pc.magenta("⤷") : a.urgency === "urgent" ? "🚨" : pc.dim("▸");
+    const icon = a.kind === "handoff" ? pc.magenta("⤷") : a.urgency === "urgent" ? "!" : pc.dim("▸");
     out.push(`    ${pc.dim(rel(a.createdAt).padStart(4))}  ${pc.cyan(a.from.handle)} ${icon} ${truncate(a.body, 42)}`);
   }
 
@@ -78,7 +84,15 @@ function render(team: string, members: MemberPresence[], items: FeedItem[]): str
   return out.join("\n");
 }
 
-export async function board(): Promise<void> {
+async function fetchBoard(s: Parameters<typeof api.members>[0], teamId: string) {
+  const [members, items] = await Promise.all([
+    api.members(s, teamId).then((r) => r.members),
+    api.feed(s, teamId, 30).then((r) => r.items),
+  ]);
+  return { members, items };
+}
+
+export async function board(opts: { once?: boolean } = {}): Promise<void> {
   const s = requireSession();
   const cfg = loadConfig();
   if (!cfg.activeTeamId) return void console.log("No active team. `ayo team create` or `ayo join` first.");
@@ -91,23 +105,44 @@ export async function board(): Promise<void> {
     /* fall back to default label */
   }
 
+  // One-shot frame: no alt screen / raw mode / loop. Works when piped.
+  if (opts.once) {
+    const { members, items } = await fetchBoard(s, teamId);
+    console.log(render(team, members, items));
+    return;
+  }
+
+  if (!process.stdout.isTTY) {
+    console.error("ayo board needs an interactive terminal (or use `ayo board --once`).");
+    process.exit(1);
+  }
+
   let running = true;
-  const cleanup = () => {
-    if (!running) return;
-    running = false;
+  // Synchronous terminal restore — safe to call from the "exit" event.
+  const restore = () => {
     process.stdout.write(EXIT_ALT);
     try {
       process.stdin.setRawMode(false);
     } catch {
       /* not a TTY */
     }
+  };
+  const cleanup = () => {
+    if (!running) return;
+    running = false;
+    restore();
     process.stdin.pause();
   };
   const quit = () => {
     cleanup();
     process.exit(0);
   };
+  // Cover every exit path so the terminal is never left broken.
   process.on("SIGINT", quit);
+  process.on("SIGTERM", quit);
+  process.on("exit", () => {
+    if (running) restore(); // uncaught error / explicit process.exit backstop
+  });
   try {
     process.stdin.setRawMode(true);
     process.stdin.resume();
@@ -120,20 +155,21 @@ export async function board(): Promise<void> {
   }
 
   process.stdout.write(ENTER_ALT);
-  while (running) {
-    let members: MemberPresence[] = [];
-    let items: FeedItem[] = [];
-    let err = "";
-    try {
-      [members, items] = await Promise.all([
-        api.members(s, teamId).then((r) => r.members),
-        api.feed(s, teamId, 30).then((r) => r.items),
-      ]);
-    } catch (e) {
-      err = (e as Error).message;
+  try {
+    while (running) {
+      let members: MemberPresence[] = [];
+      let items: FeedItem[] = [];
+      let err = "";
+      try {
+        ({ members, items } = await fetchBoard(s, teamId));
+      } catch (e) {
+        err = (e as Error).message;
+      }
+      const body = err ? `\n  ${pc.yellow(`reconnecting… (${err})`)}` : render(team, members, items);
+      process.stdout.write(CLEAR + body);
+      await sleep(REFRESH_MS);
     }
-    const body = err ? `\n  ${pc.yellow(`reconnecting… (${err})`)}` : render(team, members, items);
-    process.stdout.write(CLEAR + body);
-    await sleep(REFRESH_MS);
+  } finally {
+    cleanup(); // restore on an uncaught error in the loop too
   }
 }

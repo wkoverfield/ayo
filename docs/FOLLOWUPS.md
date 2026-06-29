@@ -35,6 +35,17 @@ independent code review of the scaffold + Layer 1.
 - **Staged + unstaged** — `git diff HEAD` covers both (working tree vs HEAD), which
   is intended; documented in the share_context/create_handoff tool descriptions.
 
+## Board / feed (deferred from review)
+
+- **Feed does a full message scan** — `handleFeed` lists ALL `msg:` keys then
+  sorts/slices to the latest N, and does one `delivery:` list per returned item.
+  Fine at hackathon volume; for a long-lived team this is unbounded memory +
+  latency. Bound it (store a recent-id index, or page the scan) before scale.
+- **Board polling, not realtime** — `ayo board` polls every 3s. Could subscribe
+  to the daemon's WebSocket stream for instant updates instead.
+- **Board backoff** — on repeated relay errors the board retries on the fixed 3s
+  tick (no exponential backoff). Acceptable; revisit if it gets chatty.
+
 ## Still open from the build plan
 
 - **Real GitHub device flow** (#2) — ✅ implemented (`packages/relay/src/github.ts`
