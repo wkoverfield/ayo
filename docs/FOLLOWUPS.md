@@ -23,6 +23,18 @@ independent code review of the scaffold + Layer 1.
   (messages/deliveries/members tables) for production; the scaffold uses the DO
   key-value store.
 
+## MCP tools (deferred from review)
+
+- **Agent broadcast rate-limiting** — an agent could loop `send_ayo`/`create_handoff`
+  with `["*"]` + `urgent`. The relay has a `rate_limited` code, but there's no
+  client-side cooldown. Add a per-tool throttle (e.g. one urgent broadcast / N min).
+- **Context repo = MCP server's cwd** — `captureContext()` reads `process.cwd()`,
+  which is the dir the agent started the server in. The tool response now echoes
+  the captured `repo@branch` so a mismatch is visible; a future `repoPath` arg
+  could let the agent target a specific repo explicitly.
+- **Staged + unstaged** — `git diff HEAD` covers both (working tree vs HEAD), which
+  is intended; documented in the share_context/create_handoff tool descriptions.
+
 ## Still open from the build plan
 
 - **Real GitHub device flow** (#2) — ✅ implemented (`packages/relay/src/github.ts`

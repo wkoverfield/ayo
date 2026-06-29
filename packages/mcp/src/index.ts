@@ -1,67 +1,170 @@
 #!/usr/bin/env node
 /**
- * Ayo MCP server. Exposes Ayo to Codex & Claude so a developer can send and
- * read pings without leaving the agent. Receiving in real time is still the
- * daemon's job (ADR 0001) — these tools are pull + send.
- *
- * Scaffold: `send_ayo` and `read_inbox` are wired; the rest are declared as the
- * tool surface from the PRD and return a not-yet-implemented notice.
+ * Ayo MCP server — exposes Ayo to Codex & Claude so a developer can send pings,
+ * share work context, hand off, and manage status without leaving the agent.
+ * Receiving in real time is still the daemon's job (ADR 0001); these tools are
+ * send + pull. Identity is shared with the CLI via ~/.ayo (see relay.ts).
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import type { AyoContext, SendAyoResponse } from "@ayo-dev/core";
 import { loadAuth, relay } from "./relay.js";
+import { captureContext } from "./context.js";
 
 const server = new McpServer({ name: "ayo", version: "0.0.0" });
 
+const recipients = z.array(z.string().min(1)).min(1).describe('Handles to ping. Use ["*"] for the whole team.');
+
+function text(s: string) {
+  return { content: [{ type: "text" as const, text: s }] };
+}
+
+/** What was sent, plus the work context that was attached — so the agent/user
+ *  can sanity-check the captured repo before trusting the handoff. */
+function sentSummary(res: SendAyoResponse, ctx?: AyoContext): string {
+  const live = res.deliveredTo.join(", ") || "none";
+  const queued = res.queuedFor.join(", ") || "none";
+  const where = ctx?.repo
+    ? ` Context: ${ctx.repo}@${ctx.branch ?? "?"}, ${ctx.changedFiles?.length ?? 0} changed file(s)${ctx.diff ? ", full diff included" : ""}.`
+    : "";
+  return `Sent ${res.id}. Delivered (online): ${live}. Queued (offline): ${queued}.${where}`;
+}
+
+/** Merge captured git context with an optional agent note. */
+function withNote(ctx: AyoContext | undefined, note?: string): AyoContext | undefined {
+  if (!ctx && !note) return undefined;
+  return { ...(ctx ?? {}), ...(note ? { note } : {}) };
+}
+
+// ── send_ayo ─────────────────────────────────────────────────────────────────
 server.tool(
   "send_ayo",
-  "Send an attention ping with work context to a teammate (or the whole team).",
+  "Ping a teammate (or the whole team) with a short message. Lightweight work " +
+    "context (repo, branch, changed files) is attached automatically — no diff.",
   {
-    to: z.array(z.string()).describe('Handles to ping. Use ["*"] for the whole team.'),
-    body: z.string().describe("The message."),
-    urgent: z.boolean().optional().describe("Mark urgent (overrides do-not-disturb)."),
-    note: z.string().optional().describe("Optional handoff summary to attach as context."),
+    to: recipients,
+    body: z.string().min(1).describe("The message."),
+    urgent: z.boolean().optional().describe("Mark urgent (can override do-not-disturb)."),
+    note: z.string().optional().describe("Optional extra note to attach as context."),
   },
   async ({ to, body, urgent, note }) => {
-    const { teamId } = loadAuth();
-    const res = await relay.send(teamId, {
-      to,
-      body,
-      urgency: urgent ? "urgent" : "normal",
-      context: note ? { note } : undefined,
-    });
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Sent ayo ${res.id}. Live: ${res.deliveredTo.join(", ") || "none"}. Queued: ${res.queuedFor.join(", ") || "none"}.`,
-        },
-      ],
-    };
+    const auth = loadAuth();
+    const ctx = withNote(captureContext(), note); // auto lightweight context, no diff
+    const res = await relay.send(auth, { to, body, kind: "ping", urgency: urgent ? "urgent" : "normal", context: ctx });
+    return text(sentSummary(res, ctx));
   },
 );
 
+// ── read_inbox ───────────────────────────────────────────────────────────────
 server.tool(
   "read_inbox",
-  "Read your Ayo inbox. Returns unread pings with their work context.",
-  { unreadOnly: z.boolean().optional() },
+  "Read your Ayo inbox (pings sent to you) with their work context. Surfacing " +
+    "in the agent does NOT mark them read — that needs an explicit human action.",
+  { unreadOnly: z.boolean().optional().describe("Only unread (default true).") },
   async ({ unreadOnly }) => {
-    const { teamId } = loadAuth();
-    const { ayos } = await relay.inbox(teamId, unreadOnly ?? true);
-    // Surfacing in the agent is NOT a human read; we do not mark read here.
-    return { content: [{ type: "text", text: JSON.stringify(ayos, null, 2) }] };
+    const auth = loadAuth();
+    const { ayos } = await relay.inbox(auth, unreadOnly ?? true);
+    if (ayos.length === 0) return text("Inbox zero — no Ayos.");
+    return text(JSON.stringify(ayos, null, 2));
   },
 );
 
-// ── Declared tool surface (PRD) — to be implemented ──────────────────────────
-const TODO = ["set_status", "team_status", "create_handoff", "share_context", "resolve_ayo", "watch_team"];
-for (const name of TODO) {
-  server.tool(name, `(${name}) — declared; not yet implemented in this scaffold.`, {}, async () => ({
-    content: [{ type: "text", text: `${name} is not implemented yet.` }],
-  }));
-}
+// ── share_context ────────────────────────────────────────────────────────────
+server.tool(
+  "share_context",
+  "Send a teammate your current work state — repo, branch, changed files, diff " +
+    "stat, and (only if withDiff) the full diff. The diff covers all uncommitted " +
+    "changes (staged AND unstaged) and may contain secrets, so it is opt-in.",
+  {
+    to: recipients,
+    message: z.string().optional().describe("Optional note to go with the context."),
+    withDiff: z.boolean().optional().describe("Include the full git diff (default false; may contain secrets)."),
+  },
+  async ({ to, message, withDiff }) => {
+    const auth = loadAuth();
+    const ctx = captureContext({ withDiff: withDiff ?? false });
+    if (!ctx) return text("Not in a git repo — nothing to share. Use send_ayo for a plain ping.");
+    const res = await relay.send(auth, { to, body: message ?? "Sharing my current context.", kind: "ping", context: ctx });
+    return text(sentSummary(res, ctx));
+  },
+);
+
+// ── create_handoff ───────────────────────────────────────────────────────────
+server.tool(
+  "create_handoff",
+  "Hand off your work to a teammate: packages branch, changed files, diff stat, " +
+    "and the blocker into one Ayo. Set withDiff to include the full diff — it " +
+    "covers all uncommitted changes (staged AND unstaged) and may contain secrets, " +
+    "so it is OFF by default; only enable it when the human intends to share code.",
+  {
+    to: recipients,
+    blocker: z.string().min(1).describe("What you're stuck on / what they need to pick up."),
+    note: z.string().optional().describe("A short summary of the state and next steps."),
+    withDiff: z.boolean().optional().describe("Attach the full git diff (default false; may contain secrets)."),
+    urgent: z.boolean().optional(),
+  },
+  async ({ to, blocker, note, withDiff, urgent }) => {
+    const auth = loadAuth();
+    const ctx = withNote(captureContext({ withDiff: withDiff ?? false }), note);
+    const res = await relay.send(auth, { to, body: blocker, kind: "handoff", urgency: urgent ? "urgent" : "normal", context: ctx });
+    return text(`Handoff — ${sentSummary(res, ctx)}`);
+  },
+);
+
+// ── team_status ──────────────────────────────────────────────────────────────
+server.tool(
+  "team_status",
+  "See who's on the team, who's online, and their status (e.g. 'heads-down on demo').",
+  {},
+  async () => {
+    const auth = loadAuth();
+    const { members } = await relay.members(auth);
+    if (members.length === 0) return text("No members yet.");
+    const lines = members.map((m) => {
+      const note = m.statusText ? ` — "${m.statusText}"` : "";
+      return `• ${m.handle} [${m.online ? "online" : "offline"}, ${m.status}]${note}`;
+    });
+    return text(lines.join("\n"));
+  },
+);
+
+// ── set_status ───────────────────────────────────────────────────────────────
+server.tool(
+  "set_status",
+  "Set your status so teammates know what you're doing, e.g. 'locked in on demo'.",
+  {
+    statusText: z.string().describe('Free text, e.g. "locked in on the deploy".'),
+    status: z
+      .enum(["active", "heads-down", "away", "dnd"])
+      .optional()
+      .describe("Presence state — active | heads-down | away | dnd. Omit to default to heads-down. dnd suppresses normal pings."),
+  },
+  async ({ statusText, status }) => {
+    const auth = loadAuth();
+    const presence = status ?? "heads-down";
+    await relay.setStatus(auth, { status: presence, statusText });
+    return text(`Status set: ${presence} — "${statusText}"`);
+  },
+);
+
+// ── resolve_ayo ──────────────────────────────────────────────────────────────
+server.tool(
+  "resolve_ayo",
+  "Close the loop on an Ayo you've dealt with (marks it resolved for the sender).",
+  {
+    ayoId: z
+      .string()
+      .regex(/^ayo_[0-9A-HJKMNP-TV-Z]{26}$/, "must be an Ayo id like ayo_01J9Z3…")
+      .describe("The Ayo id from read_inbox (the `id` field, not `from.id`)."),
+  },
+  async ({ ayoId }) => {
+    const auth = loadAuth();
+    await relay.resolve(auth, ayoId);
+    return text(`Resolved ${ayoId}.`);
+  },
+);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
