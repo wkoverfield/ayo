@@ -120,24 +120,28 @@ function installCodex(): "installed" | "already" | "error" {
   }
 }
 
-function uninstallCodex(): "removed" | "absent" {
+function uninstallCodex(): "removed" | "absent" | "error" {
   if (!codexInstalled()) return "absent";
-  const lines = readFileSync(CODEX_CONFIG, "utf8").split("\n");
-  const out: string[] = [];
-  let skipping = false;
-  for (const line of lines) {
-    if (new RegExp(`^\\s*\\[mcp_servers\\.${SERVER_NAME}\\]`).test(line)) {
-      skipping = true; // drop the header + its keys
-      continue;
+  try {
+    const lines = readFileSync(CODEX_CONFIG, "utf8").split("\n");
+    const out: string[] = [];
+    let skipping = false;
+    for (const line of lines) {
+      if (new RegExp(`^\\s*\\[mcp_servers\\.${SERVER_NAME}\\]`).test(line)) {
+        skipping = true; // drop the header + its keys
+        continue;
+      }
+      if (skipping && /^\s*\[/.test(line)) skipping = false; // next table begins
+      if (!skipping) out.push(line);
     }
-    if (skipping && /^\s*\[/.test(line)) skipping = false; // next table begins
-    if (!skipping) out.push(line);
+    // Tidy only the seam: collapse runs of 3+ blank lines and trim trailing
+    // whitespace to a single newline. Leave leading content untouched.
+    const cleaned = `${out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "")}\n`;
+    writeAtomic(CODEX_CONFIG, cleaned);
+    return "removed";
+  } catch {
+    return "error";
   }
-  // Tidy only the seam: collapse runs of 3+ blank lines and trim trailing
-  // whitespace to a single newline. Leave leading content untouched.
-  const cleaned = `${out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "")}\n`;
-  writeAtomic(CODEX_CONFIG, cleaned);
-  return "removed";
 }
 
 // ── Public commands ──────────────────────────────────────────────────────────
@@ -192,6 +196,12 @@ export function mcpUninstall(which: { claude: boolean; codex: boolean }): void {
     );
   }
   if (which.codex) {
-    console.log(uninstallCodex() === "removed" ? pc.green("✓ removed from ~/.codex/config.toml") : pc.dim("• Codex: nothing to remove"));
+    console.log(
+      {
+        removed: pc.green("✓ removed from ~/.codex/config.toml"),
+        absent: pc.dim("• Codex: nothing to remove"),
+        error: pc.red("✗ could not write ~/.codex/config.toml"),
+      }[uninstallCodex()],
+    );
   }
 }
