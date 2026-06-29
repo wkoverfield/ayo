@@ -1,21 +1,37 @@
 {
   "name": "@ayo-dev/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Ping your teammates from inside Codex and Claude. The ayo command + the ayod daemon.",
   "license": "MIT",
+  "author": "Wilson Overfield",
+  "homepage": "https://github.com/woverfield/ayo#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/woverfield/ayo.git",
+    "directory": "packages/cli"
+  },
+  "bugs": "https://github.com/woverfield/ayo/issues",
+  "keywords": ["ayo", "cli", "mcp", "claude", "codex", "hackathon", "team", "agent", "notifications"],
   "type": "module",
   "bin": {
     "ayo": "./dist/ayo.js",
     "ayod": "./dist/ayod.js"
   },
-  "files": ["dist"],
+  "files": ["dist", "README.md"],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
-    "@ayo-dev/core": "workspace:*",
+    "@ayo-dev/core": "workspace:^",
     "commander": "^12.1.0",
     "node-notifier": "^10.0.1",
     "picocolors": "^1.1.1",

@@ -12,7 +12,8 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "dev:relay": "pnpm --filter @ayo-dev/relay dev",
-    "clean": "pnpm -r exec rm -rf dist .turbo node_modules/.cache"
+    "clean": "pnpm -r exec rm -rf dist .turbo node_modules/.cache",
+    "release": "pnpm -r publish --access public"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

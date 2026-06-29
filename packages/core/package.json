@@ -1,8 +1,17 @@
 {
   "name": "@ayo-dev/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Shared message schema, wire protocol, and types for Ayo.",
   "license": "MIT",
+  "author": "Wilson Overfield",
+  "homepage": "https://github.com/woverfield/ayo#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/woverfield/ayo.git",
+    "directory": "packages/core"
+  },
+  "bugs": "https://github.com/woverfield/ayo/issues",
+  "keywords": ["ayo", "agent", "mcp", "claude", "codex", "types"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,9 +21,16 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "README.md"],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
