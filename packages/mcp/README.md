@@ -18,8 +18,8 @@ ayo mcp install
 Or wire it up manually:
 
 ```bash
-# Claude Code
-claude mcp add ayo -- npx -y @ayo-dev/mcp
+# Claude Code (user scope, so it follows you across repos)
+claude mcp add -s user ayo -- npx -y @ayo-dev/mcp
 
 # Codex (~/.codex/config.toml)
 [mcp_servers.ayo]

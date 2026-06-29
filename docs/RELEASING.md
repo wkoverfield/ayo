@@ -19,13 +19,15 @@ deploys to Cloudflare instead — see below):
 ## Cut a release
 
 ```bash
-# from the repo root, on a clean tree
+# from the repo root, on `main`, with a clean tree
+git checkout main && git pull
 pnpm release
 ```
 
 `pnpm release` runs `pnpm build` then `pnpm -r publish --access public`, which:
 
-- builds every package,
+- builds every package (and each package's `prepack` rebuilds its own `dist`,
+  so the tarball is never stale even on a bare `pnpm -r publish`),
 - publishes in dependency order (`core` before `cli`/`mcp`),
 - rewrites the `workspace:^` dependency on `@ayo-dev/core` to the real
   version range (`^0.1.0`) in the published tarballs,
@@ -34,17 +36,24 @@ pnpm release
 Each `package.json` already sets `publishConfig.access = public`, so the
 `--access public` flag is belt-and-suspenders.
 
+> **Be on `main`.** `pnpm publish` refuses to publish from a non-default branch
+> (override with `--no-git-checks`, but prefer just being on `main`). It also
+> requires a clean working tree.
+
 ### Versioning
 
-All three packages currently move in lockstep. Bump them together before
-publishing:
+All three packages move in lockstep. Bump just the publishable ones, without
+creating per-package git tags:
 
 ```bash
-pnpm -r exec npm version patch   # or minor / major
+pnpm --filter @ayo-dev/core --filter @ayo-dev/cli --filter @ayo-dev/mcp \
+  exec npm version patch --no-git-tag-version   # or minor / major
+git commit -am "release: vX.Y.Z" && git tag vX.Y.Z
 ```
 
 (pnpm publishes only versions not already on the registry, so a re-run after a
-partial failure is safe.)
+partial failure is safe. If `cli`/`mcp` can't resolve `@ayo-dev/core` right after
+publish, give the registry CDN ~a minute to propagate and re-run `pnpm release`.)
 
 ### Notes
 

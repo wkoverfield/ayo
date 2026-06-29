@@ -18,7 +18,7 @@ ayo daemon start                # background receiver → native notifications
 
 ```bash
 ayo team "we're cooked, prod is down"     # broadcast to the whole team
-ayo maya "can you take the auth flow?"    # direct ping (target `all` broadcasts)
+ayo maya "can you take the auth flow?"    # direct ping a teammate (ayo all "..." broadcasts)
 ayo handoff maya "merged #42, you're up"  # hand off work with branch context
 ayo board                                 # live team dashboard (who's online, recent activity)
 ayo hackathon start "Hack Midwest" --ends 18h   # shared deadline + ⏰ milestone nudges
