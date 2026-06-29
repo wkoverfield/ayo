@@ -40,7 +40,7 @@ import {
 export { TeamHub } from "./team-do.js";
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
 
@@ -70,11 +70,13 @@ export default {
 
       if (path === "/v1/teams" && req.method === "POST") {
         const { name } = (await req.json()) as CreateTeamRequest;
-        const team = await createTeam(env, name);
         const user = await loadUser(env, userId);
-        const creatorHandle = user?.handle ?? "you";
-        await addMember(env, { teamId: team.id, userId, handle: creatorHandle });
-        await registerInRoster(env, team.id, userId, creatorHandle);
+        if (!user) return apiError("invalid_token", "Session user not found.");
+        const team = await createTeam(env, name);
+        await addMember(env, { teamId: team.id, userId, handle: user.handle });
+        // Best-effort, off the response path: seed the DO roster so the creator
+        // shows on the board immediately (self-heals on first interaction anyway).
+        ctx.waitUntil(registerInRoster(env, team.id, userId, user.handle));
         const body: CreateTeamResponse = { id: team.id, name: team.name, joinCode: team.joinCode };
         return json(body, { status: 201 });
       }
@@ -84,9 +86,13 @@ export default {
         const team = await teamByJoinCode(env, code);
         if (!team) return apiError("team_not_found", "No team with that join code.");
         const user = await loadUser(env, userId);
-        const joinHandle = user?.handle ?? "you";
-        await addMember(env, { teamId: team.id, userId, handle: joinHandle });
-        await registerInRoster(env, team.id, userId, joinHandle);
+        if (!user) return apiError("invalid_token", "Session user not found.");
+        // Idempotent: a repeat join (same valid code) is a no-op, so it can't be
+        // used to hammer the team DO with register calls.
+        if (!(await getMembership(env, team.id, userId))) {
+          await addMember(env, { teamId: team.id, userId, handle: user.handle });
+          ctx.waitUntil(registerInRoster(env, team.id, userId, user.handle));
+        }
         const body: JoinTeamResponse = { id: team.id, name: team.name };
         return json(body);
       }
