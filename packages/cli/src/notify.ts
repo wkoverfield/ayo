@@ -41,10 +41,28 @@ export function notifyAyo(ayo: Ayo): void {
   const toastSound = urgent && !willSound;
 
   if (process.platform === "darwin") {
-    macNotify(title, ayo.body, toastSound);
+    macNotify(title, ayo.body, toastSound, buildCtx(ayo));
   } else {
     notifier.notify({ title, message: ayo.body, sound: toastSound, ...(ICON_PATH ? { icon: ICON_PATH } : {}) });
   }
+}
+
+/** The actionable-toast payload: what a click can copy or pipe into the agent. */
+function buildCtx(ayo: Ayo): string {
+  return JSON.stringify({ ayoId: ayo.id, from: ayo.from.handle, context: formatContext(ayo) });
+}
+
+/** A readable work-context blob for Copy / pipe-to-agent. */
+function formatContext(ayo: Ayo): string {
+  const c = ayo.context;
+  const lines = [`Ayo from ${ayo.from.handle}: ${ayo.body}`];
+  if (c?.repo && c?.branch) lines.push(`${c.repo}@${c.branch}`);
+  else if (c?.repo) lines.push(c.repo);
+  if (c?.note) lines.push(`note: ${c.note}`);
+  if (c?.changedFiles?.length) lines.push(`changed: ${c.changedFiles.slice(0, 12).join(", ")}`);
+  if (c?.diffStat) lines.push(c.diffStat);
+  if (c?.links?.length) lines.push(...c.links);
+  return lines.join("\n");
 }
 
 /**
@@ -88,7 +106,7 @@ function osaEscape(s: string): string {
     .replace(/[\r\n]/g, " ");
 }
 
-function macNotify(title: string, message: string, sound: boolean): void {
+function macNotify(title: string, message: string, sound: boolean, ctxJSON?: string): void {
   // Prefer the signed Ayo.app helper: its AppIcon IS the Ayo mark, so the toast
   // is branded. `open -g` launches it via Launch Services (which
   // UNUserNotificationCenter requires to recognize the bundle) in the background
@@ -103,6 +121,7 @@ function macNotify(title: string, message: string, sound: boolean): void {
     try {
       const args = ["-g", app, "--args", title, message];
       if (sound) args.push("--sound");
+      if (ctxJSON) args.push("--ctx", ctxJSON, "--ayo-dir", AYO_DIR);
       execFileSync("open", args, { stdio: "ignore", timeout: 5000 });
       return;
     } catch {

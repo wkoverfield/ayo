@@ -1,49 +1,121 @@
-// AyoNotifier — a tiny signed .app whose AppIcon is the Ayo mark, so macOS shows
-// OUR logo on the toast instead of Script Editor's (osascript can't set an icon).
-// The daemon (notify.ts) execs this with [title, body]; macOS attributes the
-// notification to this bundle (dev.ayo.notifier) and renders its AppIcon.
+// AyoNotifier — a signed .app whose AppIcon is the Ayo mark, so macOS shows OUR
+// logo on the toast (osascript can't set an icon). It also makes the toast
+// ACTIONABLE: the daemon (notify.ts) execs it with the Ayo's context, and the
+// helper stays alive until the user clicks (or a timeout) — the alerter/NotifiCLI
+// model. On click it copies context / pipes it into the user's coding agent, then
+// exits. A bare-exec'd binary can't own notifications, so notify.ts launches it
+// via `open -g Ayo.app --args ...`.
 //
-// Usage: AyoNotifier "<title>" "<body>" [--sound]
-// Exit:  0 posted · 2 not authorized · 3 post failed. (Useful when run directly;
-//        notify.ts launches via `open`, which can't see these; it falls back to
-//        osascript only if the launch itself fails, not on a post failure.)
+// Args: <title> <body> [--sound] [--ctx <json>] [--ayo-dir <path>]
+//   --ctx JSON: { "ayoId": "...", "from": "...", "context": "<text to copy/pipe>" }
+// Actions: body-click or "→ My agent" -> append to <ayo-dir>/action-queue.jsonl
+//          (the agent hook drains it); "Copy context" -> clipboard.
 
+import AppKit
 import Foundation
 import UserNotifications
 
-func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
-
 let args = CommandLine.arguments
+func argValue(_ flag: String) -> String? {
+  guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+  return args[i + 1]
+}
+func errLog(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
+
 let title = args.count > 1 ? args[1] : "Ayo"
 let body = args.count > 2 ? args[2] : ""
-// Scan only past the positional [path, title, body] so a body of "--sound" can't
-// spuriously enable sound.
 let wantSound = args.dropFirst(3).contains("--sound")
+let ctxJSON = argValue("--ctx")
+let ayoDir = argValue("--ayo-dir") ?? (NSHomeDirectory() + "/.ayo")
 
-let center = UNUserNotificationCenter.current()
+struct Ctx: Decodable { let ayoId: String?; let from: String?; let context: String? }
+func decodeCtx(_ j: String?) -> Ctx? {
+  j.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(Ctx.self, from: $0) }
+}
 
-// Authorization is remembered per bundle id, so this only prompts the first run.
-center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-  if let error = error { err("ayo-notifier: auth error: \(error.localizedDescription)") }
-  guard granted else {
-    err("ayo-notifier: notifications not authorized for dev.ayo.notifier")
-    exit(2)
+let CATEGORY = "AYO_PING"
+
+/** Append one action record as a JSON line (append is ~atomic, race-friendly).
+ *  ctx + dir come from the NOTIFICATION (userInfo), so this works even when the
+ *  helper is relaunched on click and argv is gone. */
+func enqueueAction(_ action: String, ctx: Ctx?, dir: String) {
+  var obj: [String: String] = ["action": action, "at": ISO8601DateFormatter().string(from: Date())]
+  if let id = ctx?.ayoId { obj["ayoId"] = id }
+  if let from = ctx?.from { obj["from"] = from }
+  if let c = ctx?.context { obj["context"] = c }
+  guard let data = try? JSONSerialization.data(withJSONObject: obj),
+        var line = String(data: data, encoding: .utf8) else { return }
+  line += "\n"
+  let path = dir + "/action-queue.jsonl"
+  try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+  if let fh = FileHandle(forWritingAtPath: path) {
+    fh.seekToEndOfFile()
+    fh.write(line.data(using: .utf8)!)
+    try? fh.close()
+  } else {
+    try? line.data(using: .utf8)!.write(to: URL(fileURLWithPath: path))
   }
-  let content = UNMutableNotificationContent()
-  content.title = title
-  content.body = body
-  if wantSound { content.sound = .default }
-  let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-  center.add(req) { addError in
-    if let addError = addError {
-      err("ayo-notifier: \(addError.localizedDescription)")
-      exit(3)
+}
+
+final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+  func applicationDidFinishLaunching(_ note: Notification) {
+    let center = UNUserNotificationCenter.current()
+    center.delegate = self // MUST be set before launch completes
+    let copy = UNNotificationAction(identifier: "copy", title: "Copy context", options: [])
+    let agent = UNNotificationAction(identifier: "agent", title: "\u{2192} My agent", options: [])
+    center.setNotificationCategories([
+      UNNotificationCategory(identifier: CATEGORY, actions: [copy, agent], intentIdentifiers: [], options: [])
+    ])
+    center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+      if let error = error { errLog("ayo-notifier: auth: \(error.localizedDescription)") }
+      guard granted else { exit(2) }
+      let content = UNMutableNotificationContent()
+      content.title = title
+      content.body = body
+      if wantSound { content.sound = .default }
+      content.categoryIdentifier = CATEGORY
+      // Stash everything the click handler needs in userInfo — it survives a
+      // relaunch (when macOS reopens us to handle a click and argv is gone).
+      content.userInfo = ["ctx": ctxJSON ?? "", "ayoDir": ayoDir]
+      let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+      center.add(req) { addErr in
+        if let addErr = addErr { errLog("ayo-notifier: \(addErr.localizedDescription)"); exit(3) }
+      }
+      // Stay alive to receive the click; exit if it's ignored for a while so we
+      // don't linger (the toast remains clickable in Notification Center, which
+      // relaunches us via the documented fallback).
+      DispatchQueue.main.asyncAfter(deadline: .now() + 90) { exit(0) }
     }
-    // Give the system a beat to deliver before the process exits.
-    Thread.sleep(forTimeInterval: 0.3)
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    // Pull context from the notification (works on a relaunch where argv is gone);
+    // fall back to argv for the still-alive case.
+    let info = response.notification.request.content.userInfo
+    let actionCtx = decodeCtx(info["ctx"] as? String) ?? decodeCtx(ctxJSON)
+    let dir = (info["ayoDir"] as? String) ?? ayoDir
+    switch response.actionIdentifier {
+    case "copy":
+      if let text = actionCtx?.context {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+      }
+    case "agent", UNNotificationDefaultActionIdentifier: // body-click pipes to the agent
+      enqueueAction("agent", ctx: actionCtx, dir: dir)
+    default: // dismiss / unknown
+      break
+    }
+    completionHandler()
     exit(0)
   }
 }
 
-// Keep the process alive for the async callbacks; exit() above ends it.
-RunLoop.main.run()
+let app = NSApplication.shared
+let delegate = Delegate()
+app.delegate = delegate
+app.setActivationPolicy(.accessory) // no Dock icon (matches LSUIElement)
+app.run()

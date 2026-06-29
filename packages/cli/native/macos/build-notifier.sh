@@ -32,7 +32,7 @@ fi
 
 echo "→ compiling AyoNotifier…"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-swiftc -O "$SRC" -o "$APP/Contents/MacOS/AyoNotifier" -framework Foundation -framework UserNotifications
+swiftc -O "$SRC" -o "$APP/Contents/MacOS/AyoNotifier" -framework Foundation -framework UserNotifications -framework AppKit
 cp "$PLIST" "$APP/Contents/Info.plist"
 
 echo "→ building AppIcon.icns from $ICON_PNG…"
