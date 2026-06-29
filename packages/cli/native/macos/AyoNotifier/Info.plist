@@ -23,5 +23,11 @@
   <!-- Agent app: no Dock icon when it fires a notification. -->
   <key>LSUIElement</key>
   <true/>
+  <!-- Hint to Launch Services that this bundle handles its own activity, so a
+       post-timeout notification click is more likely to relaunch it. -->
+  <key>NSUserActivityTypes</key>
+  <array>
+    <string>dev.ayo.notifier.ping</string>
+  </array>
 </dict>
 </plist>

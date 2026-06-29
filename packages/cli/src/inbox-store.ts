@@ -5,12 +5,49 @@
  */
 
 import { join } from "node:path";
-import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, existsSync, unlinkSync } from "node:fs";
 import type { Ayo } from "@ayo-dev/core";
 import { AYO_DIR } from "./config.js";
 
 const INBOX_PATH = join(AYO_DIR, "inbox.json");
 const AGENT_STATE_PATH = join(AYO_DIR, "agent-state.json");
+const ACTION_QUEUE_PATH = join(AYO_DIR, "action-queue.jsonl");
+
+/** A toast action the macOS helper recorded on click (e.g. "→ My agent"). */
+export interface ClickedAction {
+  action: string;
+  at?: string;
+  ayoId?: string;
+  from?: string;
+  context?: string;
+}
+
+/** Read + clear the toast-action queue (JSONL the helper appends to on click).
+ *  Best-effort: a click in the tiny read/clear window is rarely possible + lost. */
+export function drainActionQueue(): ClickedAction[] {
+  if (!existsSync(ACTION_QUEUE_PATH)) return [];
+  try {
+    const raw = readFileSync(ACTION_QUEUE_PATH, "utf8");
+    try {
+      unlinkSync(ACTION_QUEUE_PATH);
+    } catch {
+      /* ignore */
+    }
+    return raw
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => {
+        try {
+          return JSON.parse(l) as ClickedAction;
+        } catch {
+          return null;
+        }
+      })
+      .filter((a): a is ClickedAction => a !== null);
+  } catch {
+    return [];
+  }
+}
 
 export interface InboxFile {
   ayos: Ayo[];

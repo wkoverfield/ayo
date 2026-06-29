@@ -20,6 +20,8 @@ import { loadConfig, loadSession } from "./config.js";
 import { isDaemonAlive } from "./daemon-ctl.js";
 import {
   type AgentSurface,
+  type ClickedAction,
+  drainActionQueue,
   getLastSurfaced,
   loadInbox,
   setLastSurfaced,
@@ -39,6 +41,14 @@ export async function surfaceUnread(opts: SurfaceOpts): Promise<void> {
     const session = loadSession();
     const cfg = loadConfig();
     if (!session || !cfg.activeTeamId) return; // not set up — stay silent
+
+    // Toast clicks ("→ My agent") pull a ping's context straight into this
+    // session — surface them immediately, independent of unread dedup. Only the
+    // printing surface drains (so the context isn't consumed silently elsewhere).
+    if (opts.print) {
+      const clicked = drainActionQueue().filter((a) => a.action === "agent" && a.context);
+      if (clicked.length) process.stdout.write(formatClicked(clicked));
+    }
 
     const daemonAlive = isDaemonAlive();
     // If the daemon is down, the local inbox may be stale — best-effort refresh
@@ -80,6 +90,17 @@ function formatForAgent(fresh: Ayo[]): string {
     `To reply, tell me to "Ayo <handle> ..." or run \`ayo inbox\`.`,
     "",
   ].join("\n");
+}
+
+/** Clicked-toast context the user explicitly pulled into this session. */
+function formatClicked(clicked: ClickedAction[]): string {
+  const blocks = clicked.map((a) => `From ${a.from ?? "a teammate"}:\n${a.context}`);
+  return [
+    `📌 You pulled ${clicked.length} Ayo${clicked.length > 1 ? "s" : ""} into this session from a toast:`,
+    ...blocks,
+    "Use this context to help; reply with \"Ayo <handle> ...\" if needed.",
+    "",
+  ].join("\n\n");
 }
 
 /** Best-effort inbox refresh with a hard timeout. Failures are ignored. */
