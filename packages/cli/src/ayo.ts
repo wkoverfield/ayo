@@ -26,6 +26,7 @@ import {
 } from "./daemon-ctl.js";
 import { surfaceUnread } from "./agent.js";
 import { board } from "./board.js";
+import { hackathonEnd, hackathonExport, hackathonStart, hackathonStatus } from "./hackathon.js";
 import { hooksInstall, hooksStatus, hooksUninstall } from "./hooks.js";
 import { mcpInstall, mcpStatus, mcpUninstall } from "./mcp-setup.js";
 
@@ -310,6 +311,20 @@ program
       console.log(pc.red(`✗ relay unreachable: ${(err as Error).message}`));
     }
   });
+
+// ── hackathon mode ───────────────────────────────────────────────────────────
+const hack = program.command("hackathon").description("Shared deadline + ⏰ nudges + timeline export");
+hack
+  .command("start <name>")
+  .description("Start a sprint with a deadline, e.g. ayo hackathon start \"Hack Midwest\" --ends 18h")
+  .requiredOption("--ends <duration>", "time until the deadline, e.g. 18h, 90m, 1h30m")
+  .action((name: string, opts) => hackathonStart(name, opts.ends));
+hack.command("status").description("Show the deadline + countdown").action(() => hackathonStatus());
+hack.command("end").description("End the hackathon (stops nudges)").action(() => hackathonEnd());
+hack
+  .command("export")
+  .description("Print the event timeline as markdown (`> story.md`)")
+  .action(() => hackathonExport());
 
 // ── board (live team dashboard) ──────────────────────────────────────────────
 program

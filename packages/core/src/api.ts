@@ -134,3 +134,28 @@ export interface SetStatusRequest {
   /** Seconds until the status auto-clears; omit for no expiry. */
   ttl?: number;
 }
+
+// ── Hackathon mode ───────────────────────────────────────────────────────────
+
+export interface HackathonState {
+  name: string;
+  /** ISO timestamp the sprint ends. */
+  endsAt: string;
+  /** ISO timestamp the sprint started. */
+  startedAt: string;
+}
+
+export interface StartHackathonRequest {
+  name: string;
+  endsAt: string;
+}
+
+export interface HackathonResponse {
+  hackathon: HackathonState | null;
+}
+
+/** Full team-relevant event log for `ayo hackathon export`, oldest-first. */
+export interface TimelineResponse {
+  hackathon: HackathonState | null;
+  events: Ayo[];
+}

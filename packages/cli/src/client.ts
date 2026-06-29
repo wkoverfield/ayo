@@ -7,7 +7,10 @@ import type {
   DevicePollResponse,
   DeviceStartResponse,
   FeedResponse,
+  HackathonResponse,
   InboxResponse,
+  StartHackathonRequest,
+  TimelineResponse,
   JoinTeamResponse,
   MembersResponse,
   MeResponse,
@@ -65,6 +68,15 @@ export const api = {
 
   feed: (s: Session, teamId: string, limit = 30) =>
     call<FeedResponse>(`/v1/teams/${teamId}/feed?limit=${limit}`, { token: s.token }),
+
+  getHackathon: (s: Session, teamId: string) =>
+    call<HackathonResponse>(`/v1/teams/${teamId}/hackathon`, { token: s.token }),
+  startHackathon: (s: Session, teamId: string, body: StartHackathonRequest) =>
+    call<HackathonResponse>(`/v1/teams/${teamId}/hackathon`, { method: "PUT", body, token: s.token }),
+  endHackathon: (s: Session, teamId: string) =>
+    call<HackathonResponse>(`/v1/teams/${teamId}/hackathon`, { method: "DELETE", token: s.token }),
+  timeline: (s: Session, teamId: string) =>
+    call<TimelineResponse>(`/v1/teams/${teamId}/timeline`, { token: s.token }),
 
   send: (s: Session, teamId: string, body: SendAyoRequest) =>
     call<SendAyoResponse>(`/v1/teams/${teamId}/ayo`, { method: "POST", body, token: s.token }),

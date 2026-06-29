@@ -9,9 +9,10 @@
  */
 
 import pc from "picocolors";
-import type { FeedItem, MemberPresence } from "@ayo-dev/core";
+import type { FeedItem, HackathonState, MemberPresence } from "@ayo-dev/core";
 import { loadConfig, requireSession } from "./config.js";
 import { api } from "./client.js";
+import { fmtCountdown } from "./hackathon.js";
 
 const ENTER_ALT = "\x1b[?1049h\x1b[?25l"; // alternate screen + hide cursor
 const EXIT_ALT = "\x1b[?25h\x1b[?1049l"; // show cursor + leave alternate screen
@@ -37,10 +38,13 @@ function truncate(s: string, n: number): string {
   return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
 }
 
-function render(team: string, members: MemberPresence[], items: FeedItem[]): string {
+function render(team: string, members: MemberPresence[], items: FeedItem[], hackathon: HackathonState | null): string {
   const rule = `  ${pc.dim("─".repeat(WIDTH))}`;
   const online = members.filter((m) => m.online).length;
-  const out: string[] = ["", `  ${pc.bold(pc.yellow(`⚡ ${team}`))}    ${pc.dim(`${online}/${members.length} online`)}    ${pc.dim("● live")}`, rule];
+  const title = hackathon?.name ?? team;
+  const countdown = hackathon ? fmtCountdown(hackathon.endsAt) : "";
+  const right = countdown ? pc.yellow(`⏳ ${countdown}`) : pc.dim("● live");
+  const out: string[] = ["", `  ${pc.bold(pc.yellow(`⚡ ${title}`))}    ${pc.dim(`${online}/${members.length} online`)}    ${right}`, rule];
 
   // Each member's latest repo@branch + last-activity time, derived from the feed.
   const ctxByHandle = new Map<string, { repo?: string; branch?: string }>();
@@ -85,11 +89,14 @@ function render(team: string, members: MemberPresence[], items: FeedItem[]): str
 }
 
 async function fetchBoard(s: Parameters<typeof api.members>[0], teamId: string) {
-  const [members, items] = await Promise.all([
+  const [members, items, hackathon] = await Promise.all([
     api.members(s, teamId).then((r) => r.members),
     api.feed(s, teamId, 30).then((r) => r.items),
+    // Best-effort: the hackathon is cosmetic header data — a failure here must
+    // NOT blank the whole board (which members + feed drive).
+    api.getHackathon(s, teamId).then((r) => r.hackathon).catch(() => null),
   ]);
-  return { members, items };
+  return { members, items, hackathon };
 }
 
 export async function board(opts: { once?: boolean } = {}): Promise<void> {
@@ -107,8 +114,8 @@ export async function board(opts: { once?: boolean } = {}): Promise<void> {
 
   // One-shot frame: no alt screen / raw mode / loop. Works when piped.
   if (opts.once) {
-    const { members, items } = await fetchBoard(s, teamId);
-    console.log(render(team, members, items));
+    const { members, items, hackathon } = await fetchBoard(s, teamId);
+    console.log(render(team, members, items, hackathon));
     return;
   }
 
@@ -159,13 +166,14 @@ export async function board(opts: { once?: boolean } = {}): Promise<void> {
     while (running) {
       let members: MemberPresence[] = [];
       let items: FeedItem[] = [];
+      let hackathon: HackathonState | null = null;
       let err = "";
       try {
-        ({ members, items } = await fetchBoard(s, teamId));
+        ({ members, items, hackathon } = await fetchBoard(s, teamId));
       } catch (e) {
         err = (e as Error).message;
       }
-      const body = err ? `\n  ${pc.yellow(`reconnecting… (${err})`)}` : render(team, members, items);
+      const body = err ? `\n  ${pc.yellow(`reconnecting… (${err})`)}` : render(team, members, items, hackathon);
       process.stdout.write(CLEAR + body);
       await sleep(REFRESH_MS);
     }

@@ -54,6 +54,17 @@ independent code review of the scaffold + Layer 1.
 - **Board backoff** — on repeated relay errors the board retries on the fixed 3s
   tick (no exponential backoff). Acceptable; revisit if it gets chatty.
 
+## Hackathon mode (deferred from review)
+
+- **One DO alarm, two would-be uses** — hackathon milestone nudges now use the
+  team DO's single `alarm()`. ADR 0002 earmarked `alarm()` for expiry/resolve
+  sweeps (not implemented). When expiry sweeps land, `alarm()` needs a dispatch
+  table (which job is due) — otherwise whichever `setAlarm()` ran last wins and
+  silently cancels the other.
+- **Timeline bounded scan** — `handleTimeline` scans the newest 1000 messages
+  (same bounded-window caveat as the feed); a very long, busy sprint could
+  exceed it. Page it before that matters.
+
 ## Still open from the build plan
 
 - **Real GitHub device flow** (#2) — ✅ implemented (`packages/relay/src/github.ts`
