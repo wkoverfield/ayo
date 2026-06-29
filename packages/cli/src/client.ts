@@ -16,6 +16,7 @@ import type {
   MeResponse,
   SendAyoRequest,
   SendAyoResponse,
+  SetSoundRequest,
   SetStatusRequest,
 } from "@ayo-dev/core";
 import { loadConfig, type Session } from "./config.js";
@@ -97,4 +98,7 @@ export const api = {
 
   setStatus: (s: Session, teamId: string, body: SetStatusRequest) =>
     call<{ ok: true }>(`/v1/teams/${teamId}/status`, { method: "PUT", body, token: s.token }),
+
+  setSound: (s: Session, body: SetSoundRequest) =>
+    call<{ sound: SetSoundRequest }>("/v1/me/sound", { method: "PUT", body, token: s.token }),
 };

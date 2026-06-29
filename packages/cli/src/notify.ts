@@ -17,7 +17,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import notifier from "node-notifier";
 import type { Ayo } from "@ayo-dev/core";
-import { AYO_DIR } from "./config.js";
+import { AYO_DIR, loadConfig } from "./config.js";
+import { playSound, resolveSound } from "./sound.js";
 
 // The Ayo mark, shipped in the package (dist/notify.js -> ../assets/ayo.png).
 // node-notifier passes it to notify-send (Linux) / SnoreToast (Windows). macOS
@@ -33,11 +34,25 @@ export function notifyAyo(ayo: Ayo): void {
   const urgent = ayo.urgency === "urgent";
   const title = `${urgent ? "🚨 " : ""}Ayo from ${ayo.from.handle}${where}`;
 
+  // Signature sound: play the sender's chosen sound (unless the recipient muted
+  // it). When one plays, keep the toast itself silent so they don't double up.
+  const sig = sigSound(ayo);
+  if (sig) playSound(sig);
+  const toastSound = urgent && !sig;
+
   if (process.platform === "darwin") {
-    macNotify(title, ayo.body, urgent);
+    macNotify(title, ayo.body, toastSound);
   } else {
-    notifier.notify({ title, message: ayo.body, sound: urgent, ...(ICON_PATH ? { icon: ICON_PATH } : {}) });
+    notifier.notify({ title, message: ayo.body, sound: toastSound, ...(ICON_PATH ? { icon: ICON_PATH } : {}) });
   }
+}
+
+/** The sender's sound file to play, honoring the recipient's local mute prefs. */
+function sigSound(ayo: Ayo): string | null {
+  const cfg = loadConfig();
+  if (cfg.muteSounds) return null;
+  if (cfg.mutedSenders?.includes(ayo.from.handle)) return null;
+  return resolveSound(ayo.sound);
 }
 
 /** Escape a string for embedding in an AppleScript double-quoted literal. */
@@ -77,5 +92,10 @@ function macNotify(title: string, message: string, sound: boolean): void {
   const script =
     `display notification "${osaEscape(message)}" with title "${osaEscape(title)}"` +
     (sound ? ` sound name "Ping"` : "");
-  execFileSync("osascript", ["-e", script], { stdio: "ignore", timeout: 5000 });
+  try {
+    execFileSync("osascript", ["-e", script], { stdio: "ignore", timeout: 5000 });
+  } catch {
+    /* best-effort: osascript can fail (locked screen / Focus / permissions) —
+       don't throw out of notifyAyo, which would skip the daemon's notified ack. */
+  }
 }

@@ -13,6 +13,7 @@
 import type {
   AckFrame,
   Ayo,
+  AyoSound,
   Delivery,
   DeliveryState,
   FeedResponse,
@@ -33,6 +34,21 @@ import type {
 } from "@ayo-dev/core";
 import { canAdvance, newAyoId } from "@ayo-dev/core";
 import { apiError, type Env } from "./env.js";
+
+/** Parse the `x-ayo-sound` header the Worker stamps from the sender's profile.
+ *  Trusted shape (the Worker validated it on set), but parse defensively. */
+function parseSound(header: string | null): AyoSound | null {
+  if (!header) return null;
+  try {
+    const s = JSON.parse(header) as AyoSound;
+    if (s?.kind === "preset" && typeof s.id === "string") return s;
+    // custom clips arrive in Phase A2 — add that branch alongside Worker-side
+    // validation then; for now only presets are stamped.
+  } catch {
+    /* ignore malformed */
+  }
+  return null;
+}
 
 interface Member {
   userId: UserId;
@@ -206,6 +222,7 @@ export class TeamHub implements DurableObject {
       urgency: input.urgency ?? "normal",
       context: input.context,
       replyTo: input.replyTo ?? null,
+      sound: parseSound(req.headers.get("x-ayo-sound")), // sender's signature sound, stamped by the Worker
       expiresAt: input.expiresAt ?? null,
       createdAt: new Date().toISOString(),
     };
