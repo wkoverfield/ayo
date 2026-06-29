@@ -72,7 +72,9 @@ export default {
         const { name } = (await req.json()) as CreateTeamRequest;
         const team = await createTeam(env, name);
         const user = await loadUser(env, userId);
-        await addMember(env, { teamId: team.id, userId, handle: user?.handle ?? "you" });
+        const creatorHandle = user?.handle ?? "you";
+        await addMember(env, { teamId: team.id, userId, handle: creatorHandle });
+        await registerInRoster(env, team.id, userId, creatorHandle);
         const body: CreateTeamResponse = { id: team.id, name: team.name, joinCode: team.joinCode };
         return json(body, { status: 201 });
       }
@@ -82,7 +84,9 @@ export default {
         const team = await teamByJoinCode(env, code);
         if (!team) return apiError("team_not_found", "No team with that join code.");
         const user = await loadUser(env, userId);
-        await addMember(env, { teamId: team.id, userId, handle: user?.handle ?? "you" });
+        const joinHandle = user?.handle ?? "you";
+        await addMember(env, { teamId: team.id, userId, handle: joinHandle });
+        await registerInRoster(env, team.id, userId, joinHandle);
         const body: JoinTeamResponse = { id: team.id, name: team.name };
         return json(body);
       }
@@ -124,6 +128,23 @@ export default {
 async function loadUser(env: Env, userId: string): Promise<PublicUser | null> {
   const raw = await env.AYO_KV.get(`user:${userId}`);
   return raw ? (JSON.parse(raw) as PublicUser) : null;
+}
+
+/**
+ * Register a member into the team DO's roster up front (on create/join), so
+ * broadcasts, the board, and milestone nudges see them immediately — not only
+ * after their first DO interaction (daemon connect / send). Best-effort: the
+ * roster is also self-healing on first real interaction.
+ */
+async function registerInRoster(env: Env, teamId: string, userId: string, handle: string): Promise<void> {
+  try {
+    const stub = env.TEAM.get(env.TEAM.idFromName(teamId));
+    const headers = new Headers({ "x-ayo-user": userId, "x-ayo-handle": handle, "x-ayo-team": teamId });
+    if (env.INTERNAL_SECRET) headers.set("x-ayo-internal", env.INTERNAL_SECRET);
+    await stub.fetch(new Request("https://team/internal/register", { method: "POST", headers }));
+  } catch {
+    /* ignore — self-healing on first interaction */
+  }
 }
 
 /**
