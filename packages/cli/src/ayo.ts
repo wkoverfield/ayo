@@ -26,6 +26,7 @@ import {
 } from "./daemon-ctl.js";
 import { surfaceUnread } from "./agent.js";
 import { hooksInstall, hooksStatus, hooksUninstall } from "./hooks.js";
+import { mcpInstall, mcpStatus, mcpUninstall } from "./mcp-setup.js";
 
 const program = new Command();
 program.name("ayo").description("Ping your teammates from inside Codex and Claude.").version("0.0.0");
@@ -237,6 +238,22 @@ hooks
   .option("--claude", "Claude Code only")
   .option("--codex", "Codex only")
   .action((opts) => hooksUninstall(targets(opts)));
+
+// ── mcp (register the Ayo MCP server with the agents) ────────────────────────
+const mcp = program.command("mcp").description("Register the Ayo MCP server with Codex & Claude Code");
+mcp
+  .command("install")
+  .description("Register the Ayo tools with your agents (default: both)")
+  .option("--claude", "Claude Code only")
+  .option("--codex", "Codex only")
+  .action((opts) => mcpInstall(targets(opts)));
+mcp.command("status").description("Show where the Ayo MCP server is registered").action(() => mcpStatus());
+mcp
+  .command("uninstall")
+  .description("Unregister the Ayo MCP server (default: both)")
+  .option("--claude", "Claude Code only")
+  .option("--codex", "Codex only")
+  .action((opts) => mcpUninstall(targets(opts)));
 
 // ── agent surfacing entrypoints (hook targets; hidden) ───────────────────────
 program
