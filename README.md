@@ -99,11 +99,27 @@ firing tells the sender your machine buzzed, not that you looked.
 ```bash
 npm install -g @ayo-dev/cli
 
+ayo init                        # one command: login, pick a sound, wire your
+                                # agents, then fire a test ping you see + hear
+```
+
+`ayo init` ends by sending a real Ayo to yourself, so you experience the whole
+thing — branded toast + your signature sound — in under a minute, no teammate
+required. Flags: `--dry-run` (show what it'd do, change nothing), `--yes`
+(non-interactive), `--only login,sound,daemon,mcp,hooks,test,team` (a subset).
+`ayo uninstall` reverses the local wiring (your login + team stay).
+
+<details><summary>…or set it up step by step</summary>
+
+```bash
 ayo login                       # GitHub device flow
 ayo daemon install              # install ayod (your receiver) as a login service
 ayo mcp install                 # use Ayo from inside Codex & Claude
 ayo hooks install               # surface unread Ayos in-agent
+```
+</details>
 
+```bash
 ayo team create "Hack Midwest"  # prints a join code; teammates run `ayo join <code>`
 
 ayo kenny "demo is cooked"      # → native toast on Kenny's machine
