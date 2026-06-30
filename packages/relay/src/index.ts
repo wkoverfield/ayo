@@ -20,6 +20,7 @@ import type {
 } from "@ayo-dev/core";
 import { newUserId, SOUND_PRESETS } from "@ayo-dev/core";
 import { apiError, json, type Env } from "./env.js";
+import { overRateLimit, clientIp } from "./rate-limit.js";
 import {
   authenticate,
   devStubEnabled,
@@ -51,9 +52,17 @@ export default {
       // NOTE: `await` so a handler rejection is caught by the catch below
       // (returning a bare promise would let it escape to a raw 500).
       if (path === "/v1/auth/device" && req.method === "POST") {
+        // Starting a device flow writes KV; cap per IP so it can't be spammed.
+        if (await overRateLimit(env, `dev-start:${clientIp(req)}`, 10, 60)) {
+          return apiError("rate_limited", "Too many login attempts — wait a minute and try again.");
+        }
         return await handleDeviceStart(req, env);
       }
       if (path === "/v1/auth/device/poll" && req.method === "POST") {
+        // A legit client polls ~12×/min; this is just a runaway cap (NAT-friendly).
+        if (await overRateLimit(env, `dev-poll:${clientIp(req)}`, 120, 60)) {
+          return apiError("rate_limited", "Polling too fast — wait a minute.");
+        }
         return await handleDevicePoll(req, env);
       }
 
@@ -166,6 +175,11 @@ export default {
         // recipient gets it inline (snapshot at send time, like `from`).
         let soundHeader: string | undefined;
         if (req.method === "POST" && rest === "/ayo") {
+          // Per-sender cap: generous for humans (Ayos are low-volume, high-signal),
+          // but stops a script from blasting the team.
+          if (await overRateLimit(env, `send:${userId}`, 60, 60)) {
+            return apiError("rate_limited", "You're sending Ayos too fast — give it a moment.");
+          }
           const sender = await loadUser(env, userId);
           if (sender?.sound) soundHeader = JSON.stringify(sender.sound);
         }
