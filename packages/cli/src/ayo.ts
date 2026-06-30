@@ -73,7 +73,7 @@ function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: bo
   }
   if (held.length) {
     const names = held.join(", ");
-    console.log(pc.dim(`· ${names} ${held.length === 1 ? "is" : "are"} heads-down — held for their inbox, no toast`));
+    console.log(pc.dim(`· ${names} ${held.length === 1 ? "is" : "are"} heads-down — no toast; they'll see it when they next check their inbox`));
   }
 
   if (live + queued > 0) {

@@ -234,23 +234,29 @@ export class TeamHub implements DurableObject {
     const deliveredTo: Handle[] = [];
     const queuedFor: Handle[] = [];
     const heldFor: Handle[] = [];
-    // Urgent (🚨) breaks through focus; everything else respects it.
+    // Urgent (🚨) breaks through focus; everything else respects it. `away` is
+    // deliberately NOT a focus-hold — it's just "stepped out", so it queues and
+    // buzzes on reconnect like any offline recipient.
     const breakthrough = ayo.urgency === "urgent";
 
     for (const m of recipients) {
-      await this.setDelivery(ayo.id, m.userId, "sent");
       const sockets = this.socketsForUser(m.userId);
       const focusing = (m.status === "heads-down" || m.status === "dnd") && !breakthrough;
-      if (focusing) {
-        // Online but heads-down: hold it for their inbox / agent surface — no
-        // real-time toast. This is the anti-Slack promise (don't interrupt focus).
+      if (sockets.length === 0) {
+        // Offline → queue it; the daemon replays + buzzes on reconnect.
+        await this.setDelivery(ayo.id, m.userId, "sent");
+        queuedFor.push(m.handle);
+      } else if (focusing) {
+        // Online but heads-down: hold for their inbox / agent surface, no live
+        // toast. The "held" state keeps it OUT of reconnect replay (unbuzzedFor),
+        // so it never ambushes them on the next socket reconnect.
+        await this.setDelivery(ayo.id, m.userId, "held");
         heldFor.push(m.handle);
-      } else if (sockets.length > 0) {
+      } else {
+        await this.setDelivery(ayo.id, m.userId, "sent");
         const frame: ServerFrame = { t: "ayo", ayo };
         for (const s of sockets) s.send(JSON.stringify(frame));
         deliveredTo.push(m.handle);
-      } else {
-        queuedFor.push(m.handle);
       }
     }
 

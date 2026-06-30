@@ -41,7 +41,9 @@ function sentSummary(res: SendAyoResponse, ctx?: AyoContext): string {
   const unknown = res.unknownRecipients ?? [];
   const warn = unknown.length ? ` ⚠ No such teammate (reached no one): ${unknown.join(", ")}.` : "";
   const held = res.heldFor ?? [];
-  const focus = held.length ? ` Held for focus (heads-down, inbox only): ${held.join(", ")}.` : "";
+  const focus = held.length
+    ? ` Held for focus — heads-down, no toast; they'll see it when they next check their inbox: ${held.join(", ")}.`
+    : "";
   const where = ctx?.repo
     ? ` Context: ${ctx.repo}@${ctx.branch ?? "?"}, ${ctx.changedFiles?.length ?? 0} changed file(s)${ctx.diff ? ", full diff included" : ""}.`
     : "";
