@@ -13,6 +13,7 @@ import {
   saveConfig,
   saveSession,
   requireSession,
+  loadSession,
   resolveHandle,
 } from "./config.js";
 import { api, RelayError } from "./client.js";
@@ -25,7 +26,9 @@ import {
   daemonStatus,
   daemonStop,
   daemonLogs,
+  isDaemonAlive,
 } from "./daemon-ctl.js";
+import { fireTestToast } from "./notify.js";
 import { surfaceUnread } from "./agent.js";
 import { board } from "./board.js";
 import { hackathonEnd, hackathonExport, hackathonStart, hackathonStatus } from "./hackathon.js";
@@ -393,18 +396,58 @@ program
 // ── doctor ───────────────────────────────────────────────────────────────────
 program
   .command("doctor")
-  .description("Check environment + connectivity")
-  .action(async () => {
+  .description("Check your setup: relay, daemon, agent wiring, and a test toast")
+  .option("--no-toast", "skip the test notification")
+  .action(async (opts) => {
     const cfg = loadConfig();
-    const s = requireSession();
+    // loadSession (not requireSession, which process.exit(1)s) so a logged-out
+    // user still gets every other check + actionable next steps.
+    const s = loadSession();
+
     console.log(`relay:   ${cfg.relayUrl}`);
-    console.log(`session: ${s ? pc.green(`logged in as ${s.handle}`) : pc.red("none")}`);
-    console.log(`team:    ${cfg.activeTeamId ?? pc.dim("none")}`);
-    try {
-      await api.me(s);
-      console.log(pc.green("✓ relay reachable"));
-    } catch (err) {
-      console.log(pc.red(`✗ relay unreachable: ${(err as Error).message}`));
+    console.log(`session: ${s ? pc.green(`logged in as ${s.handle}`) : pc.red("not logged in — run `ayo login`")}`);
+    console.log(`team:    ${cfg.activeTeamId ?? pc.dim("none — `ayo team create` or `ayo join`")}`);
+
+    if (s) {
+      try {
+        await api.me(s);
+        console.log(pc.green("✓ relay reachable"));
+      } catch (err) {
+        console.log(pc.red(`✗ relay unreachable: ${(err as Error).message}`));
+      }
+    }
+
+    // The daemon is the receiver — without it, Ayos never reach this machine.
+    console.log(
+      isDaemonAlive()
+        ? pc.green("✓ daemon running (ayod)")
+        : pc.yellow("⚠ daemon not running — `ayo daemon install` (or `ayo daemon start`)"),
+    );
+
+    // Where Ayo is (or isn't) wired into your agents.
+    console.log(pc.bold("\nagent wiring:"));
+    console.log(pc.dim("  hooks (surface unread at turn boundaries):"));
+    hooksStatus();
+    console.log(pc.dim("  mcp (use Ayo from inside the agent):"));
+    mcpStatus();
+
+    // The link that fails silently: does a toast actually render? We can't know
+    // (the OS exits 0 even when it suppresses the toast under Focus/DND/denied
+    // permission), so fire one and let the human be the judge.
+    if (opts.toast !== false) {
+      console.log(pc.bold("\nnotifications:"));
+      if (process.platform === "darwin") console.log(pc.dim("  (may take a moment)…"));
+      try {
+        fireTestToast(s?.handle ?? "me");
+        console.log("→ sent a test toast — " + pc.bold("did it appear?"));
+        console.log(
+          process.platform === "darwin"
+            ? pc.dim("  Nothing? System Settings ▸ Notifications (allow Ayo / Script Editor), and turn off Focus/DND.")
+            : pc.dim("  Nothing? Check your OS notification settings and Do Not Disturb."),
+        );
+      } catch (err) {
+        console.log(pc.red(`✗ couldn't fire a test toast: ${(err as Error).message}`));
+      }
     }
   });
 
