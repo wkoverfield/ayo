@@ -36,10 +36,14 @@ function text(s: string) {
 function sentSummary(res: SendAyoResponse, ctx?: AyoContext): string {
   const live = res.deliveredTo.join(", ") || "none";
   const queued = res.queuedFor.join(", ") || "none";
+  // Surface handles that matched no teammate so the agent doesn't report success
+  // for a ping that reached no one (a typo'd or not-yet-joined handle).
+  const unknown = res.unknownRecipients ?? [];
+  const warn = unknown.length ? ` ⚠ No such teammate (reached no one): ${unknown.join(", ")}.` : "";
   const where = ctx?.repo
     ? ` Context: ${ctx.repo}@${ctx.branch ?? "?"}, ${ctx.changedFiles?.length ?? 0} changed file(s)${ctx.diff ? ", full diff included" : ""}.`
     : "";
-  return `Sent ${res.id}. Delivered (online): ${live}. Queued (offline): ${queued}.${where}`;
+  return `Sent ${res.id}. Delivered (online): ${live}. Queued (offline): ${queued}.${warn}${where}`;
 }
 
 /** Merge captured git context with an optional agent note. */
