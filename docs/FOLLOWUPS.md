@@ -154,3 +154,18 @@ validated; generic error messages). Still deferred:
   is atomic on POSIX but can fail with `EPERM`/`EEXIST` on Windows when the
   destination exists. Revisit (e.g. retry, or a write-lock) if Windows is
   promoted from "fail gracefully" to supported.
+
+## Invite loop / teams (from the C1 invite-loop review)
+
+- **Surface the inviter to the joiner** — highest conversion ROI. Today a joiner
+  runs `ayo join <code>` and lands on a roster of dots with no anchor to the
+  human who recruited them (the shared code is team-level, not per-invite). The
+  clean fix is per-invite tokens that encode inviter + team, so join can greet
+  "joined — say hi to <inviter>" and pre-target the first-ping at them.
+- **Join-code rotation + expiry** — the code is permanent, member-readable, and
+  non-rotating. A departed teammate (or a code pasted into a public channel)
+  keeps a working invite forever, with no revocation path. Add creator-only
+  rotate/regenerate + optional expiry before public volume.
+- **Team-size cap** — `addMember` is unbounded. A leaked permanent code + no cap
+  = a team can be flooded. Cheapest of these three; arguably the most urgent
+  given the relay already has abuse caps elsewhere.

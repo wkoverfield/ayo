@@ -15,6 +15,7 @@ import type {
   DeviceStartResponse,
   JoinTeamRequest,
   JoinTeamResponse,
+  InviteResponse,
   MeResponse,
   PublicUser,
 } from "@ayo-dev/core";
@@ -149,7 +150,20 @@ export default {
           await addMember(env, { teamId: team.id, userId, handle: user.handle });
           ctx.waitUntil(registerInRoster(env, team.id, userId, user.handle));
         }
-        const body: JoinTeamResponse = { id: team.id, name: team.name };
+        const body: JoinTeamResponse = { id: team.id, name: team.name, joinCode: team.joinCode };
+        return json(body);
+      }
+
+      // ── Invite: the active team's shareable join code (members only) ────
+      const inviteMatch = path.match(/^\/v1\/teams\/(team_[^/]+)\/invite$/);
+      if (inviteMatch && req.method === "GET") {
+        const teamId = inviteMatch[1] as never;
+        const team = await getTeam(env, teamId);
+        if (!team) return apiError("team_not_found", "No team with that id.");
+        if (!(await getMembership(env, teamId, userId))) {
+          return apiError("not_a_member", "You are not a member of this team.");
+        }
+        const body: InviteResponse = { name: team.name, joinCode: team.joinCode };
         return json(body);
       }
 

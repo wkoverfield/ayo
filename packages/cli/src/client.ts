@@ -13,6 +13,7 @@ import type {
   StartHackathonRequest,
   TimelineResponse,
   JoinTeamResponse,
+  InviteResponse,
   MembersResponse,
   MeResponse,
   SendAyoRequest,
@@ -67,6 +68,9 @@ export const api = {
 
   members: (s: Session, teamId: string) =>
     call<MembersResponse>(`/v1/teams/${teamId}/members`, { token: s.token }),
+
+  invite: (s: Session, teamId: string) =>
+    call<InviteResponse>(`/v1/teams/${teamId}/invite`, { token: s.token }),
 
   feed: (s: Session, teamId: string, limit = 30) =>
     call<FeedResponse>(`/v1/teams/${teamId}/feed?limit=${limit}`, { token: s.token }),
