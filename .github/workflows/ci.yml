@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Typecheck + build the TypeScript workspace on every OS we ship to. The CLI
+  # branches on process.platform for notifications, sound, and service install
+  # (notify.ts, sound.ts, service.ts), so we exercise install + build on each
+  # runner to catch platform-specific breakage without spinning up a VM.
+  build:
+    name: build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20 # matches engines.node (>=20); test the supported floor
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Build
+        run: pnpm -r build
+
+  # Verify the native macOS notifier still compiles. The full build-notifier.sh
+  # also signs/notarizes (needs a cert we don't have in CI), so here we only
+  # compile main.swift unsigned — that's enough to catch source regressions.
+  swift:
+    name: swift compile (macos)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile AyoNotifier (unsigned)
+        run: |
+          swiftc -O packages/cli/native/macos/AyoNotifier/main.swift \
+            -o "${RUNNER_TEMP}/AyoNotifier" \
+            -framework Foundation \
+            -framework UserNotifications \
+            -framework AppKit
