@@ -32,7 +32,7 @@ import { surfaceUnread } from "./agent.js";
 import { board } from "./board.js";
 import { hackathonEnd, hackathonExport, hackathonStart, hackathonStatus } from "./hackathon.js";
 import { hooksInstall, hooksStatus, hooksUninstall } from "./hooks.js";
-import { mcpInstall, mcpStatus, mcpUninstall } from "./mcp-setup.js";
+import { mcpInstall, mcpStatus, mcpUninstall, MCP_HOSTS } from "./mcp-setup.js";
 import { soundList, soundMute, soundPreview, soundSet, soundStatus, soundUnmute, soundUpload } from "./sound-setup.js";
 
 // Read the real version from package.json (dist/ayo.js → ../package.json, which
@@ -352,6 +352,16 @@ function targets(opts: { claude?: boolean; codex?: boolean }): { claude: boolean
   if (!opts.claude && !opts.codex) return { claude: true, codex: true };
   return { claude: !!opts.claude, codex: !!opts.codex };
 }
+
+/** MCP supports more hosts than hooks (Cursor, etc.). No flag = all hosts. */
+function mcpTargets(opts: { claude?: boolean; codex?: boolean; cursor?: boolean }): Set<string> {
+  if (!opts.claude && !opts.codex && !opts.cursor) return new Set(MCP_HOSTS);
+  const sel = new Set<string>();
+  if (opts.claude) sel.add("claude");
+  if (opts.codex) sel.add("codex");
+  if (opts.cursor) sel.add("cursor");
+  return sel;
+}
 hooks
   .command("install")
   .description("Install agent hooks (default: both)")
@@ -367,20 +377,22 @@ hooks
   .action((opts) => hooksUninstall(targets(opts)));
 
 // ── mcp (register the Ayo MCP server with the agents) ────────────────────────
-const mcp = program.command("mcp").description("Register the Ayo MCP server with Codex & Claude Code");
+const mcp = program.command("mcp").description("Register the Ayo MCP server with your agents (Claude, Codex, Cursor)");
 mcp
   .command("install")
-  .description("Register the Ayo tools with your agents (default: both)")
+  .description("Register the Ayo tools with your agents (default: all)")
   .option("--claude", "Claude Code only")
   .option("--codex", "Codex only")
-  .action((opts) => mcpInstall(targets(opts)));
+  .option("--cursor", "Cursor only")
+  .action((opts) => mcpInstall(mcpTargets(opts)));
 mcp.command("status").description("Show where the Ayo MCP server is registered").action(() => mcpStatus());
 mcp
   .command("uninstall")
-  .description("Unregister the Ayo MCP server (default: both)")
+  .description("Unregister the Ayo MCP server (default: all)")
   .option("--claude", "Claude Code only")
   .option("--codex", "Codex only")
-  .action((opts) => mcpUninstall(targets(opts)));
+  .option("--cursor", "Cursor only")
+  .action((opts) => mcpUninstall(mcpTargets(opts)));
 
 // ── agent surfacing entrypoints (hook targets; hidden) ───────────────────────
 /** Claude/Codex pass a JSON hook payload on stdin (session_id, cwd,
