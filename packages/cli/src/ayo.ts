@@ -297,10 +297,42 @@ mcp
   .action((opts) => mcpUninstall(targets(opts)));
 
 // ── agent surfacing entrypoints (hook targets; hidden) ───────────────────────
+/** Claude/Codex pass a JSON hook payload on stdin (session_id, cwd,
+ *  hook_event_name). Read it (with a timeout so a manual run never hangs). */
+async function readHookStdin(): Promise<{ sessionId?: string; cwd?: string; event?: string }> {
+  if (process.stdin.isTTY) return {};
+  try {
+    const raw = await Promise.race([
+      (async () => {
+        const chunks: Buffer[] = [];
+        for await (const c of process.stdin) chunks.push(c as Buffer);
+        return Buffer.concat(chunks).toString("utf8").trim();
+      })(),
+      new Promise<string>((r) => setTimeout(() => r(""), 800)),
+    ]);
+    process.stdin.destroy(); // release the handle (the timeout branch leaves the reader open)
+    if (!raw) return {};
+    const j = JSON.parse(raw) as { session_id?: string; cwd?: string; hook_event_name?: string };
+    return { sessionId: j.session_id, cwd: j.cwd, event: j.hook_event_name };
+  } catch {
+    return {};
+  }
+}
 program
   .command("agent-context", { hidden: true })
   .description("Print unread Ayos for agent context injection (Claude hooks)")
-  .action(() => surfaceUnread({ surface: "claude", print: true }));
+  .action(async () => {
+    const hook = await readHookStdin();
+    await surfaceUnread({ surface: "claude", print: true, hook });
+    // Flush stdout before exit — process.exit() can truncate a piped stdout,
+    // which would drop the context we inject into the Claude hook. Bounded so a
+    // blocked pipe can't add more than 1s to hook latency.
+    await Promise.race([
+      new Promise<void>((r) => process.stdout.write("", () => r())),
+      new Promise<void>((r) => setTimeout(r, 1000)),
+    ]);
+    process.exit(0); // don't let an open stdin handle keep the hook alive
+  });
 program
   .command("notify-check", { hidden: true })
   .description("Toast fallback for unread Ayos (Codex notify)")

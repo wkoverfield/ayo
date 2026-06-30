@@ -8,8 +8,9 @@
 //
 // Args: <title> <body> [--sound] [--ctx <json>] [--ayo-dir <path>]
 //   --ctx JSON: { "ayoId": "...", "from": "...", "context": "<text to copy/pipe>" }
-// Actions: body-click or "→ My agent" -> append to <ayo-dir>/action-queue.jsonl
-//          (the agent hook drains it); "Copy context" -> clipboard.
+// Actions: body-click or "→ My agent" -> write a per-ping file under
+//          <ayo-dir>/pending/<uuid>.json (the agent hook routes + claims it by
+//          repo); "Copy context" -> clipboard.
 
 import AppKit
 import Foundation
@@ -28,44 +29,82 @@ let wantSound = args.dropFirst(3).contains("--sound")
 let ctxJSON = argValue("--ctx")
 let ayoDir = argValue("--ayo-dir") ?? (NSHomeDirectory() + "/.ayo")
 
-struct Ctx: Decodable { let ayoId: String?; let from: String?; let context: String? }
+struct Ctx: Decodable {
+  let ayoId: String?
+  let from: String?
+  let context: String?
+  let repo: String? // for route-by-repo to the right agent session
+  let relayUrl: String? // non-secret; for Reply/Resolve HTTP
+  let teamId: String?
+}
 func decodeCtx(_ j: String?) -> Ctx? {
   j.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(Ctx.self, from: $0) }
 }
 
 let CATEGORY = "AYO_PING"
 
-/** Append one action record as a JSON line (append is ~atomic, race-friendly).
- *  ctx + dir come from the NOTIFICATION (userInfo), so this works even when the
- *  helper is relaunched on click and argv is gone. */
-func enqueueAction(_ action: String, ctx: Ctx?, dir: String) {
-  var obj: [String: String] = ["action": action, "at": ISO8601DateFormatter().string(from: Date())]
+/** Read the session token from disk (NOT argv) so it never leaks via process args. */
+func readToken(_ dir: String) -> String? {
+  guard let data = FileManager.default.contents(atPath: dir + "/session.json"),
+        let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+  return obj["token"] as? String
+}
+
+/** Fire a POST and wait briefly (the helper exits right after). */
+func httpPost(_ urlStr: String, json: [String: Any]?, token: String) {
+  guard let url = URL(string: urlStr) else { return }
+  var req = URLRequest(url: url)
+  req.httpMethod = "POST"
+  req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+  if let json = json {
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.httpBody = try? JSONSerialization.data(withJSONObject: json)
+  }
+  let sema = DispatchSemaphore(value: 0)
+  URLSession.shared.dataTask(with: req) { _, _, _ in sema.signal() }.resume()
+  _ = sema.wait(timeout: .now() + 5)
+}
+
+func sendReply(_ text: String, ctx: Ctx?, dir: String) {
+  guard let to = ctx?.from, let relay = ctx?.relayUrl, let team = ctx?.teamId, let token = readToken(dir) else { return }
+  httpPost(relay + "/v1/teams/" + team + "/ayo", json: ["to": [to], "body": text], token: token)
+}
+
+func resolveAyo(ctx: Ctx?, dir: String) {
+  guard let id = ctx?.ayoId, let relay = ctx?.relayUrl, let token = readToken(dir) else { return }
+  httpPost(relay + "/v1/ayo/" + id + "/resolve", json: nil, token: token)
+}
+
+/** Drop a clicked ping as a unique file in <dir>/pending/ for the agent hook to
+ *  route + claim (route-by-repo). ctx + dir come from the NOTIFICATION (userInfo),
+ *  so this works even on a relaunch-on-click where argv is gone. A unique filename
+ *  means no concurrent-write contention. */
+func enqueuePending(ctx: Ctx?, dir: String) {
+  var obj: [String: String] = ["at": ISO8601DateFormatter().string(from: Date())]
   if let id = ctx?.ayoId { obj["ayoId"] = id }
   if let from = ctx?.from { obj["from"] = from }
   if let c = ctx?.context { obj["context"] = c }
-  guard let data = try? JSONSerialization.data(withJSONObject: obj),
-        var line = String(data: data, encoding: .utf8) else { return }
-  line += "\n"
-  let path = dir + "/action-queue.jsonl"
-  try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-  // POSIX O_APPEND: a single write() is atomic for records < PIPE_BUF, so two
-  // helper instances clicking at once can't interleave/corrupt a JSONL line.
-  let bytes = Array(line.utf8)
-  let fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0o644)
-  if fd >= 0 {
-    _ = bytes.withUnsafeBufferPointer { Darwin.write(fd, $0.baseAddress, $0.count) }
-    close(fd)
-  }
+  if let r = ctx?.repo { obj["repo"] = r }
+  guard let data = try? JSONSerialization.data(withJSONObject: obj) else { return }
+  let pendingDir = dir + "/pending"
+  try? FileManager.default.createDirectory(atPath: pendingDir, withIntermediateDirectories: true)
+  try? data.write(to: URL(fileURLWithPath: pendingDir + "/" + UUID().uuidString + ".json"))
 }
 
 final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
   func applicationDidFinishLaunching(_ note: Notification) {
     let center = UNUserNotificationCenter.current()
     center.delegate = self // MUST be set before launch completes
-    let copy = UNNotificationAction(identifier: "copy", title: "Copy context", options: [])
     let agent = UNNotificationAction(identifier: "agent", title: "\u{2192} My agent", options: [])
+    let reply = UNTextInputNotificationAction(
+      identifier: "reply", title: "Reply", options: [],
+      textInputButtonTitle: "Send", textInputPlaceholder: "Reply\u{2026}"
+    )
+    let copy = UNNotificationAction(identifier: "copy", title: "Copy context", options: [])
+    let resolve = UNNotificationAction(identifier: "resolve", title: "Resolve", options: [])
+    // Banner shows ~2 as buttons; the rest in the expanded menu. macOS limit is 4.
     center.setNotificationCategories([
-      UNNotificationCategory(identifier: CATEGORY, actions: [copy, agent], intentIdentifiers: [], options: [])
+      UNNotificationCategory(identifier: CATEGORY, actions: [agent, reply, copy, resolve], intentIdentifiers: [], options: [])
     ])
     center.requestAuthorization(options: [.alert, .sound]) { granted, error in
       // These callbacks run on a background queue; bounce exit() to main so it
@@ -112,7 +151,14 @@ final class Delegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         NSPasteboard.general.setString(text, forType: .string)
       }
     case "agent", UNNotificationDefaultActionIdentifier: // body-click pipes to the agent
-      enqueueAction("agent", ctx: actionCtx, dir: dir)
+      enqueuePending(ctx: actionCtx, dir: dir)
+    case "reply":
+      if let text = (response as? UNTextInputNotificationResponse)?.userText,
+         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        sendReply(text, ctx: actionCtx, dir: dir)
+      }
+    case "resolve":
+      resolveAyo(ctx: actionCtx, dir: dir)
     default: // dismiss / unknown
       break
     }

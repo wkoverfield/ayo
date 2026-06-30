@@ -47,9 +47,19 @@ export function notifyAyo(ayo: Ayo): void {
   }
 }
 
-/** The actionable-toast payload: what a click can copy or pipe into the agent. */
+/** The actionable-toast payload: what a click can copy / pipe to the agent /
+ *  reply to / resolve. relayUrl + teamId are non-secret; the helper reads the
+ *  token from ~/.ayo/session.json itself (so it never rides in argv). */
 function buildCtx(ayo: Ayo): string {
-  return JSON.stringify({ ayoId: ayo.id, from: ayo.from.handle, context: formatContext(ayo) });
+  const cfg = loadConfig();
+  return JSON.stringify({
+    ayoId: ayo.id,
+    from: ayo.from.handle,
+    context: formatContext(ayo),
+    repo: ayo.context?.repo, // for route-by-repo to the right agent session
+    relayUrl: cfg.relayUrl,
+    teamId: cfg.activeTeamId,
+  });
 }
 
 /** A readable work-context blob for Copy / pipe-to-agent. */

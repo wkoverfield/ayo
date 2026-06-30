@@ -6,6 +6,13 @@ release, grounded in feasibility research across macOS/Windows/Linux + the relay
 Both build on the Phase 2a macOS notifier helper (`packages/cli/native/macos`)
 and the daemon receive path (`ayod.ts` → `notify.ts` → inbox → agent hook).
 
+> **Implementation note (post-debate):** the "pipe to agent" action shipped with
+> *session routing* — instead of one global `action-queue.json`, a click writes a
+> per-ping file in `~/.ayo/pending/` and a **session registry** routes it
+> (route-by-repo, next-prompt fallback) into the right agent session. The
+> `action-queue.json` references below are the original sketch; see
+> `packages/cli/src/session-registry.ts` for what was built.
+
 ---
 
 ## 1. Customizable notification sounds
