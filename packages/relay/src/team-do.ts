@@ -32,7 +32,7 @@ import type {
   TimelineResponse,
   UserId,
 } from "@ayo-dev/core";
-import { canAdvance, newAyoId } from "@ayo-dev/core";
+import { canAdvance, newAyoId, PROTOCOL_VERSION } from "@ayo-dev/core";
 import { apiError, type Env } from "./env.js";
 
 /** Parse the `x-ayo-sound` header the Worker stamps from the sender's profile.
@@ -152,6 +152,7 @@ export class TeamHub implements DurableObject {
     // `ready`: cursor, unread count, and the current roster.
     const ready: ServerFrame = {
       t: "ready",
+      protocol: PROTOCOL_VERSION,
       cursor: await this.ctx.storage.get<string>(`cursor:${userId}`) as never ?? null,
       unread: await this.countUnread(userId, handle),
       members: await this.roster(),
