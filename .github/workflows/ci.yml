@@ -10,17 +10,23 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: CI only reads the repo. Important once public, when every
+# fork PR runs these workflows with the default GITHUB_TOKEN.
+permissions:
+  contents: read
+
 jobs:
   # Typecheck + build the TypeScript workspace on every OS we ship to. The CLI
   # branches on process.platform for notifications, sound, and service install
   # (notify.ts, sound.ts, service.ts), so we exercise install + build on each
   # runner to catch platform-specific breakage without spinning up a VM.
   build:
-    name: build (${{ matrix.os }})
+    name: build (${{ matrix.os }}, node ${{ matrix.node }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [20, 22] # 20 = engines.node floor; 22 = current LTS contributors use
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +37,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20 # matches engines.node (>=20); test the supported floor
+          node-version: ${{ matrix.node }}
           cache: pnpm
 
       - name: Install dependencies

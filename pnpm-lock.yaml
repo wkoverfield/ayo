@@ -71,7 +71,7 @@ importers:
   packages/relay:
     dependencies:
       '@ayo-dev/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
     devDependencies:
       '@cloudflare/workers-types':
