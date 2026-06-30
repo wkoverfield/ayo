@@ -13,7 +13,8 @@ import pc from "picocolors";
 import { SOUND_PRESETS } from "@ayo-dev/core";
 import type { AyoSound } from "@ayo-dev/core";
 import { api, RelayError } from "./client.js";
-import { loadConfig, saveConfig, loadSession, saveSession, requireSession } from "./config.js";
+import { loadConfig, saveConfig, loadSession, saveSession } from "./config.js";
+import type { Session } from "./config.js";
 import { daemonInstall, daemonUninstall } from "./daemon-ctl.js";
 import { mcpInstall, mcpUninstall } from "./mcp-setup.js";
 import { hooksInstall, hooksUninstall } from "./hooks.js";
@@ -88,10 +89,18 @@ interface InitOpts {
   only?: string;
 }
 
-/** `--only daemon,mcp` → a Set; absent → null (= run everything). */
+const STEPS = ["login", "sound", "daemon", "mcp", "hooks", "test", "team"] as const;
+
+/** `--only daemon,mcp` → a Set; absent → null (= run everything). Warns on typos
+ *  so a misspelled step doesn't silently no-op into a near-empty run. */
 function parseOnly(only?: string): Set<string> | null {
   if (!only) return null;
-  return new Set(only.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+  const set = new Set(only.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+  const unknown = [...set].filter((s) => !(STEPS as readonly string[]).includes(s));
+  if (unknown.length) {
+    console.log(pc.yellow(`  ⚠ unknown --only step(s): ${unknown.join(", ")}`) + pc.dim(`  (valid: ${STEPS.join(", ")})`));
+  }
+  return set;
 }
 
 export async function runInit(opts: InitOpts): Promise<void> {
@@ -104,6 +113,8 @@ export async function runInit(opts: InitOpts): Promise<void> {
   const interactive = !auto && !dry;
 
   console.log(pc.bold("\n  ayo — let's get you set up.") + (dry ? pc.dim("  (dry run — nothing will change)") : ""));
+  // Surface the silent mode switch so a piped/CI run isn't a surprise.
+  if (auto && !opts.yes && !dry) console.log(pc.dim("  (no TTY detected — running non-interactive with defaults)"));
 
   const rl: Rl | null = interactive ? createInterface({ input: stdin, output: stdout }) : null;
   let pickedSound: AyoSound | undefined;
@@ -120,8 +131,9 @@ export async function runInit(opts: InitOpts): Promise<void> {
     }
 
     // 2 — signature sound (needs a session to save server-side)
-    if (want("sound") && (session || dry)) {
-      pickedSound = await pickSound(rl, auto, dry);
+    if (want("sound")) {
+      if (dry) console.log(`\n  ${pc.dim("→ would let you pick a signature sound")}`);
+      else if (session) pickedSound = await pickSound(session, rl, auto);
     }
 
     // 3 — wiring: the receiver + both agents
@@ -133,7 +145,9 @@ export async function runInit(opts: InitOpts): Promise<void> {
     }
 
     // 4 — prove it works on THIS machine (the silent-failure link)
-    if (want("test") && session && !dry) {
+    if (want("test") && dry) {
+      console.log(pc.dim("\n  → would fire a test toast (you'd see + hear your sound)"));
+    } else if (want("test") && session && !dry) {
       console.log(pc.bold("\n  Let's make sure it works…"));
       fireTestToast(session.handle, pickedSound ?? null);
       if (rl) {
@@ -154,7 +168,9 @@ export async function runInit(opts: InitOpts): Promise<void> {
     }
 
     // 5 — a team to ping (optional), then teach the magic
-    if (want("team") && session && rl) {
+    if (want("team") && dry) {
+      console.log(pc.dim("  → would offer to create a team (and print a join code)"));
+    } else if (want("team") && session && rl) {
       const cfg = loadConfig();
       if (!cfg.activeTeamId) {
         const name = (await rl.question('\n  Name a team to create one (Enter to skip): ')).trim();
@@ -186,16 +202,37 @@ function step(dry: boolean, label: string, run: () => void): void {
   run();
 }
 
-async function pickSound(rl: Rl | null, auto: boolean, dry: boolean): Promise<AyoSound> {
-  const fallback = "chime";
-  if (dry) {
-    console.log(`\n  ${pc.dim("→ would let you pick a signature sound")}`);
-    return { kind: "preset", id: fallback };
+async function pickSound(session: Session, rl: Rl | null, auto: boolean): Promise<AyoSound> {
+  // Read the current sound (best-effort) so re-runs default to it and a
+  // non-interactive run never resets a sound you already chose.
+  let current: AyoSound | null = null;
+  try {
+    current = (await api.me(session)).user.sound ?? null;
+  } catch {
+    /* offline / relay down — fall back to defaults below */
   }
+  const currentPreset = current?.kind === "preset" ? current.id : null;
+
+  // Non-interactive: keep an existing choice; otherwise set a sensible default.
+  if (auto) {
+    if (current) {
+      console.log(`\n  ${pc.green("✓")} signature sound: ${pc.bold(currentPreset ?? "custom")} ${pc.dim("(kept)")}`);
+      return current;
+    }
+    const id = "chime";
+    try {
+      await api.setSound(session, { kind: "preset", id });
+      console.log(`\n  ${pc.green("✓")} signature sound set to "${id}"`);
+    } catch (err) {
+      console.log(pc.yellow(`  ⚠ couldn't set a default sound (${msg(err)})`));
+    }
+    return { kind: "preset", id };
+  }
+
   console.log(pc.bold("\n  Pick your signature sound") + pc.dim(" — teammates hear this when you ping:"));
   console.log("    " + SOUND_PRESETS.join("   "));
-  let chosen = fallback;
-  if (!auto && rl) {
+  let chosen = currentPreset ?? "chime";
+  if (rl) {
     // Preview-and-pick: type a name to hear it, Enter to keep the current one.
     for (;;) {
       const a = (await rl.question(`    type a name to hear it, or Enter to keep "${chosen}": `)).trim();
@@ -210,7 +247,7 @@ async function pickSound(rl: Rl | null, auto: boolean, dry: boolean): Promise<Ay
     }
   }
   try {
-    await api.setSound(requireSession(), { kind: "preset", id: chosen });
+    await api.setSound(session, { kind: "preset", id: chosen });
     console.log(`    ${pc.green("✓")} your ayo sounds like "${chosen}"`);
   } catch (err) {
     console.log(pc.yellow(`    ⚠ couldn't save your sound (${msg(err)}) — set it later with \`ayo sound set ${chosen}\``));
@@ -230,12 +267,21 @@ function printNextSteps(dry: boolean): void {
 }
 
 /** Reverse what `init` wired locally. Leaves login + team membership intact —
- *  those are identity, not local setup (run `ayo daemon uninstall` already gone). */
+ *  those are identity, not local setup. Each step is isolated so a failure in one
+ *  (e.g. the `claude` CLI not on PATH) doesn't leave the others half-removed. */
 export async function runUninstall(): Promise<void> {
   console.log(pc.bold("\n  Removing Ayo's local wiring…"));
-  hooksUninstall(BOTH);
-  mcpUninstall(BOTH);
-  daemonUninstall();
+  for (const [label, run] of [
+    ["agent hooks", () => hooksUninstall(BOTH)],
+    ["MCP server", () => mcpUninstall(BOTH)],
+    ["daemon", () => daemonUninstall()],
+  ] as const) {
+    try {
+      run();
+    } catch (err) {
+      console.log(pc.yellow(`  ⚠ couldn't fully remove ${label}: ${msg(err)}`));
+    }
+  }
   console.log(`\n  ${pc.green("✓")} removed the daemon + agent wiring.`);
   console.log(pc.dim("  Your login and team membership are untouched. Re-run `ayo init` anytime."));
 }
