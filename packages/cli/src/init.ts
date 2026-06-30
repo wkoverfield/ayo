@@ -16,7 +16,7 @@ import { api, RelayError } from "./client.js";
 import { loadConfig, saveConfig, loadSession, saveSession } from "./config.js";
 import type { Session } from "./config.js";
 import { daemonInstall, daemonUninstall } from "./daemon-ctl.js";
-import { mcpInstall, mcpUninstall } from "./mcp-setup.js";
+import { mcpInstall, mcpUninstall, MCP_HOSTS } from "./mcp-setup.js";
 import { hooksInstall, hooksUninstall } from "./hooks.js";
 import { fireTestToast } from "./notify.js";
 import { presetPath, playSoundSync } from "./sound.js";
@@ -140,7 +140,7 @@ export async function runInit(opts: InitOpts): Promise<void> {
     if (want("daemon") || want("mcp") || want("hooks")) {
       console.log(pc.bold("\n  Wiring your receiver + agents…"));
       if (want("daemon")) step(dry, "daemon (ayod)", () => daemonInstall());
-      if (want("mcp")) step(dry, "MCP server (Claude + Codex)", () => mcpInstall(BOTH));
+      if (want("mcp")) step(dry, "MCP server (Claude, Codex, Cursor)", () => mcpInstall(new Set(MCP_HOSTS)));
       if (want("hooks")) step(dry, "agent hooks (Claude + Codex)", () => hooksInstall(BOTH));
     }
 
@@ -273,7 +273,7 @@ export async function runUninstall(): Promise<void> {
   console.log(pc.bold("\n  Removing Ayo's local wiring…"));
   for (const [label, run] of [
     ["agent hooks", () => hooksUninstall(BOTH)],
-    ["MCP server", () => mcpUninstall(BOTH)],
+    ["MCP server", () => mcpUninstall(new Set(MCP_HOSTS))],
     ["daemon", () => daemonUninstall()],
   ] as const) {
     try {

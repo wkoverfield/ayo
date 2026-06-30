@@ -59,8 +59,8 @@ pings stay private to the recipient's inbox.
 
 ## Use it from inside the agent
 
-`ayo mcp install` registers Ayo's tools with Codex and Claude Code, so your agent
-can ping, hand off, and read for you: `send_ayo`, `read_inbox`, `share_context`,
+`ayo mcp install` registers Ayo's tools with Codex, Claude Code, and Cursor, so
+your agent can ping, hand off, and read for you: `send_ayo`, `read_inbox`, `share_context`,
 `create_handoff`, `team_status`, `set_status`, `resolve_ayo`. Just ask:
 
 > _"Ayo Kenny that the deploy's cooked and include my current branch."_
