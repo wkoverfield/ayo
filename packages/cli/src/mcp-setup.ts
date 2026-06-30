@@ -26,7 +26,12 @@ const CODEX_CONFIG = join(homedir(), ".codex", "config.toml");
 function serverCommand(): { command: string; args: string[] } {
   // cli runs from packages/cli/dist/<this>.js; the mcp server is a sibling pkg.
   const entry = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "mcp", "dist", "index.js");
-  if (existsSync(entry)) return { command: process.execPath, args: [entry] };
+  // Only bake an absolute path for a DEV checkout (local source, so `ayo mcp
+  // install` picks up local changes). For a published install (under
+  // node_modules), use `npx @ayo-dev/mcp` — never pin a machine-specific path
+  // into the user's agent config that would break on reinstall / version bump.
+  const isDevCheckout = !import.meta.url.includes("node_modules");
+  if (isDevCheckout && existsSync(entry)) return { command: process.execPath, args: [entry] };
   return { command: "npx", args: ["-y", "@ayo-dev/mcp"] };
 }
 

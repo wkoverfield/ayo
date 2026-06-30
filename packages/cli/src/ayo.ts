@@ -15,7 +15,7 @@ import {
   resolveHandle,
 } from "./config.js";
 import { api, RelayError } from "./client.js";
-import type { SendAyoResponse } from "@ayo-dev/core";
+import type { SendAyoResponse, PresenceStatus } from "@ayo-dev/core";
 import { captureContext } from "./context.js";
 import {
   daemonInstall,
@@ -269,16 +269,38 @@ program
 
 // ── status ───────────────────────────────────────────────────────────────────
 program
-  .command("status <text>")
-  .description('Set your status, e.g. ayo status "locked in on demo"')
-  .option("--dnd", "do not disturb", false)
-  .action(async (text: string, opts) => {
+  .command("status [text]")
+  .description('Set your status text and/or availability, e.g. ayo status "locked in" --heads-down')
+  .option("--active", "available — pings come through", false)
+  .option("--heads-down", "focusing — hold non-urgent pings for your inbox", false)
+  .option("--dnd", "do not disturb — hold non-urgent pings for your inbox", false)
+  .option("--away", "stepped out", false)
+  .action(async (text: string | undefined, opts) => {
     try {
       const s = requireSession();
       const cfg = loadConfig();
       if (!cfg.activeTeamId) return console.log("No active team.");
-      await api.setStatus(s, cfg.activeTeamId, { status: opts.dnd ? "dnd" : "heads-down", statusText: text });
-      console.log(pc.green(`✓ status set`));
+      // Explicit flag wins; otherwise KEEP your current availability — setting a
+      // status string must never silently make you go quiet (heads-down/dnd now
+      // actually suppress pings).
+      let status: PresenceStatus | undefined =
+        opts.dnd ? "dnd" : opts.headsDown ? "heads-down" : opts.away ? "away" : opts.active ? "active" : undefined;
+      let currentText: string | null = null;
+      if (status === undefined || text === undefined) {
+        const { members } = await api.members(s, cfg.activeTeamId);
+        const me = members.find((m) => m.handle.toLowerCase() === s.handle.toLowerCase());
+        status ??= me?.status ?? "active";
+        currentText = me?.statusText ?? null;
+      }
+      const statusText = text ?? currentText;
+      await api.setStatus(s, cfg.activeTeamId, { status, statusText });
+      const quiet = status === "heads-down" || status === "dnd";
+      console.log(
+        pc.green("✓ status: ") +
+          pc.bold(status) +
+          (statusText ? pc.dim(` — "${statusText}"`) : "") +
+          (quiet ? pc.dim("  (holding non-urgent pings)") : ""),
+      );
     } catch (err) {
       fail(err);
     }
@@ -415,6 +437,9 @@ program
     hooksStatus();
     console.log(pc.dim("  mcp (use Ayo from inside the agent):"));
     mcpStatus();
+    // Be honest about the asymmetry: Claude Code can inject unread Ayos into the
+    // model at turn boundaries; Codex can't, so it's toast + MCP tools only.
+    console.log(pc.dim("  note: Claude Code gets in-agent context injection; Codex is toast + MCP tools only."));
 
     // The link that fails silently: does a toast actually render? We can't know
     // (the OS exits 0 even when it suppresses the toast under Focus/DND/denied

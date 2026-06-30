@@ -121,20 +121,20 @@ function playSignatureSound(ayo: Ayo): boolean {
     if (p) playSound(p);
     return p !== null;
   }
-  // custom: play from cache, or fetch+verify on first receipt then play. We return
-  // true (silencing the toast's own sound) even while the first fetch is pending —
-  // so if that fetch fails (offline / 404 / bad hash), the ping is silent that once
-  // and the clip caches for next time. Accepted tradeoff vs. doubling the toast
-  // sound; note an urgent Ayo can arrive silent on a sender's very first custom clip.
+  // custom: play from cache, or fetch+verify on first receipt then play.
   const cached = cachedCustomPath(sound.hash);
   if (cached) {
     playSound(cached);
-  } else {
-    ensureCustomSound(sound).then((p) => {
-      if (p) playSound(p);
-    });
+    return true;
   }
-  return true;
+  // Not cached yet: fetch it for next time. We'd normally return true (silence the
+  // toast's own sound) and accept one silent ping — fine for a normal ping, but an
+  // URGENT one must never be silent. So for urgent, return false so the toast keeps
+  // its own sound this once (the custom clip still caches for next time).
+  ensureCustomSound(sound).then((p) => {
+    if (p) playSound(p);
+  });
+  return ayo.urgency !== "urgent";
 }
 
 /** Escape a string for embedding in an AppleScript double-quoted literal. */

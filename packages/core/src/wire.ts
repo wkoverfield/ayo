@@ -9,6 +9,14 @@
 import type { AckState, Ayo, DeliveryState, Handle } from "./message.js";
 import type { AyoId } from "./ids.js";
 
+/**
+ * Wire protocol version. Bumped on a breaking change to the frames below. The
+ * server stamps it on the ready frame so a client can warn on mismatch; there's
+ * no negotiation yet (the field is cheap insurance for when old CLIs are in the
+ * wild after a relay redeploy — graceful handling can come later).
+ */
+export const PROTOCOL_VERSION = 1;
+
 export type PresenceStatus = "active" | "heads-down" | "away" | "dnd";
 
 export interface MemberPresence {
@@ -22,6 +30,8 @@ export interface MemberPresence {
 
 export interface ReadyFrame {
   t: "ready";
+  /** Wire protocol the relay is speaking (see PROTOCOL_VERSION). */
+  protocol: number;
   /** Last ayo id the server knows this client has; null if none. */
   cursor: AyoId | null;
   unread: number;

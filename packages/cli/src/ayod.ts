@@ -24,6 +24,7 @@ import {
 } from "node:fs";
 import WebSocket from "ws";
 import type { ServerFrame, AckFrame } from "@ayo-dev/core";
+import { PROTOCOL_VERSION } from "@ayo-dev/core";
 import { AYO_DIR, DAEMON_LOG_PATH, DAEMON_PID_PATH, loadConfig, loadSession } from "./config.js";
 import { loadInbox, upsertInbox } from "./inbox-store.js";
 import { notifyAyo } from "./notify.js";
@@ -170,6 +171,11 @@ function handleFrame(sock: WebSocket, frame: ServerFrame): void {
   switch (frame.t) {
     case "ready":
       log(`ready — ${frame.unread} unread, ${frame.members.filter((m) => m.online).length} online`);
+      // No negotiation yet — just surface a mismatch so a stale CLI vs a redeployed
+      // relay is diagnosable instead of silently misbehaving.
+      if (typeof frame.protocol === "number" && frame.protocol !== PROTOCOL_VERSION) {
+        log(`⚠ protocol mismatch: relay v${frame.protocol}, this ayod v${PROTOCOL_VERSION} — consider \`npm i -g @ayo-dev/cli\``);
+      }
       break;
     case "ayo": {
       const ayo = frame.ayo;
