@@ -37,11 +37,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm -r typecheck
-
+      # Build before typecheck: cli/mcp/relay import @ayo-dev/core's compiled
+      # .d.ts, which doesn't exist in a clean checkout until core is built.
+      # `pnpm -r build` runs topologically (core first), so this resolves it.
       - name: Build
         run: pnpm -r build
+
+      - name: Typecheck
+        run: pnpm -r typecheck
 
   # Verify the native macOS notifier still compiles. The full build-notifier.sh
   # also signs/notarizes (needs a cert we don't have in CI), so here we only
