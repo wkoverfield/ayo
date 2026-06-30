@@ -89,8 +89,9 @@ export interface JoinTeamRequest {
 export interface JoinTeamResponse {
   id: TeamId;
   name: string;
-  /** So a fresh joiner can immediately re-invite others (the growth loop). */
-  joinCode: string;
+  /** Lets a fresh joiner re-invite without a round-trip. Optional for safe API
+   *  evolution (an older relay won't send it; callers use `ayo invite` anyway). */
+  joinCode?: string;
 }
 
 /** `GET /v1/teams/:id/invite` — the active team's shareable invite (members only). */

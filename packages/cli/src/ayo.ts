@@ -223,7 +223,7 @@ program
           console.log("  " + others.map((m) => `${m.online ? pc.green("●") : pc.dim("○")} ${m.handle}`).join("   "));
           console.log(pc.dim(`  try:  ayo board   ·   ayo ${others[0]!.handle} "hey, just joined"`));
         } else {
-          console.log(pc.dim("  you're first here — `ayo invite` to bring the team in."));
+          console.log(pc.dim("  you're first here — run  ayo invite  to bring the team in."));
         }
       } catch {
         /* roster is best-effort */
@@ -243,14 +243,15 @@ program
       const cfg = loadConfig();
       if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
       const { name, joinCode } = await api.invite(s, cfg.activeTeamId);
-      console.log();
-      console.log(`  ${pc.bold(s.handle)} invited you to ${pc.bold(`"${name}"`)} on Ayo.`);
-      console.log(pc.dim("  Ayo = attention pings from inside your terminal/agent — no Slack."));
+      console.log(pc.dim("\n  Send this to a teammate:\n  ───────────────────────"));
+      console.log(`  ${pc.bold(s.handle)} invited you to ${pc.bold(`"${name}"`)} on Ayo — attention pings`);
+      console.log("  from inside your terminal/agent (Codex, Claude, Cursor). No Slack.");
       console.log();
       console.log("    npm install -g @ayo-dev/cli");
-      console.log(`    ayo join ${pc.bold(joinCode)}`);
+      console.log(`    ayo join ${pc.bold(joinCode ?? "")}`);
       console.log();
-      console.log(pc.dim("  ↑ copy these lines to a teammate"));
+      console.log("  What's Ayo? github.com/wkoverfield/ayo");
+      console.log(pc.dim("  ───────────────────────"));
     } catch (err) {
       fail(err);
     }
