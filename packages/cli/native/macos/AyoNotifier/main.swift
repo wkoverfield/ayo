@@ -8,8 +8,9 @@
 //
 // Args: <title> <body> [--sound] [--ctx <json>] [--ayo-dir <path>]
 //   --ctx JSON: { "ayoId": "...", "from": "...", "context": "<text to copy/pipe>" }
-// Actions: body-click or "→ My agent" -> append to <ayo-dir>/action-queue.jsonl
-//          (the agent hook drains it); "Copy context" -> clipboard.
+// Actions: body-click or "→ My agent" -> write a per-ping file under
+//          <ayo-dir>/pending/<uuid>.json (the agent hook routes + claims it by
+//          repo); "Copy context" -> clipboard.
 
 import AppKit
 import Foundation

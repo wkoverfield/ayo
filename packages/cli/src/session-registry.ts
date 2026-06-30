@@ -72,6 +72,8 @@ export function registerSession(sessionId: string, cwd: string, agent: string, r
         /* ignore */
       }
     }
+    // pid = the agent process: the hook runs as its direct child, so process.ppid
+    // is the Claude/Codex session we liveness-check via kill -0.
     const info: SessionInfo = { sessionId, cwd, repo, pid: process.ppid, agent, startedAt, lastActive: Date.now() };
     const tmp = `${path}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(info));
@@ -118,9 +120,40 @@ export function liveSessions(): SessionInfo[] {
   }
 }
 
-function repoHasLiveRecentSession(repo: string): boolean {
-  const now = Date.now();
-  return liveSessions().some((s) => s.repo === repo && now - s.lastActive < RECENCY_MS);
+const GRACE_MS = 4000; // a repo-tagged ping waits this long for its matching session before another may fallback-claim it
+const MAX_PENDING_MS = 7 * 24 * 60 * 60 * 1000; // GC cap (e.g. a Codex-only user never claims, so old pings are swept)
+
+function pingAge(ping: PendingPing): number {
+  const t = ping.at ? Date.parse(ping.at) : NaN;
+  return Number.isFinite(t) ? Date.now() - t : Infinity;
+}
+
+/** Recover pings whose claimer crashed between the rename and the unlink (a
+ *  dead-pid `.claimed.<pid>` file) — rename them back so the ping isn't lost. */
+function recoverOrphans(): void {
+  let files: string[];
+  try {
+    files = readdirSync(PENDING_DIR);
+  } catch {
+    return;
+  }
+  for (const f of files) {
+    const m = f.match(/^(.+\.json)\.claimed\.(\d+)$/);
+    if (!m) continue;
+    let dead = false;
+    try {
+      process.kill(Number(m[2]), 0);
+    } catch {
+      dead = true;
+    }
+    if (dead) {
+      try {
+        renameSync(join(PENDING_DIR, f), join(PENDING_DIR, m[1]!));
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 }
 
 /**
@@ -128,12 +161,17 @@ function repoHasLiveRecentSession(repo: string): boolean {
  * Atomic per-file rename so two sessions can't double-claim.
  */
 export function claimPending(myRepo: string | null, event: string): PendingPing[] {
+  recoverOrphans();
   let files: string[];
   try {
     files = readdirSync(PENDING_DIR).filter((f) => f.endsWith(".json"));
   } catch {
     return [];
   }
+  const sessions = liveSessions(); // one snapshot for the whole pass
+  const now = Date.now();
+  const hasLiveRecent = (repo: string) => sessions.some((s) => s.repo === repo && now - s.lastActive < RECENCY_MS);
+
   const claimed: PendingPing[] = [];
   for (const f of files) {
     const path = join(PENDING_DIR, f);
@@ -143,16 +181,32 @@ export function claimPending(myRepo: string | null, event: string): PendingPing[
     } catch {
       continue;
     }
+    // GC stragglers — only the printing (Claude) surface claims, so a Codex-only
+    // user would otherwise let pending/ grow forever. Only GC pings with a real
+    // timestamp (a missing `at` must not be treated as infinitely old + swept).
+    if (ping.at && pingAge(ping) > MAX_PENDING_MS) {
+      try {
+        unlinkSync(path);
+      } catch {
+        /* ignore */
+      }
+      continue;
+    }
     let take: boolean;
     if (ping.repo && myRepo && ping.repo === myRepo) {
       take = true; // route-by-repo: I'm the matching session
-    } else if (ping.repo && repoHasLiveRecentSession(ping.repo)) {
+    } else if (ping.repo && hasLiveRecent(ping.repo)) {
       take = false; // a live+recent session in that repo exists — let it claim
+    } else if (ping.repo) {
+      // repo-tagged but no live+recent match visible: give the matching session a
+      // grace window to fire its hook and claim before another session grabs it on
+      // next-prompt (closes a tight race where the match's write isn't visible yet).
+      take = event === "UserPromptSubmit" && pingAge(ping) > GRACE_MS;
     } else {
-      take = event === "UserPromptSubmit"; // next-prompt fallback (never on SessionStart)
+      take = event === "UserPromptSubmit"; // no repo → next-prompt (the user IS acting here)
     }
     if (!take) continue;
-    // Atomic claim: whoever renames first wins.
+    // Atomic claim: whoever renames first wins (the loser gets ENOENT, skips).
     const mine = `${path}.claimed.${process.pid}`;
     try {
       renameSync(path, mine);
@@ -163,7 +217,7 @@ export function claimPending(myRepo: string | null, event: string): PendingPing[
     try {
       unlinkSync(mine);
     } catch {
-      /* ignore */
+      /* if we die here, recoverOrphans re-offers it next pass */
     }
   }
   return claimed;

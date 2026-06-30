@@ -310,6 +310,7 @@ async function readHookStdin(): Promise<{ sessionId?: string; cwd?: string; even
       })(),
       new Promise<string>((r) => setTimeout(() => r(""), 800)),
     ]);
+    process.stdin.destroy(); // release the handle (the timeout branch leaves the reader open)
     if (!raw) return {};
     const j = JSON.parse(raw) as { session_id?: string; cwd?: string; hook_event_name?: string };
     return { sessionId: j.session_id, cwd: j.cwd, event: j.hook_event_name };
@@ -324,8 +325,12 @@ program
     const hook = await readHookStdin();
     await surfaceUnread({ surface: "claude", print: true, hook });
     // Flush stdout before exit — process.exit() can truncate a piped stdout,
-    // which would drop the context we inject into the Claude hook.
-    await new Promise<void>((r) => process.stdout.write("", () => r()));
+    // which would drop the context we inject into the Claude hook. Bounded so a
+    // blocked pipe can't add more than 1s to hook latency.
+    await Promise.race([
+      new Promise<void>((r) => process.stdout.write("", () => r())),
+      new Promise<void>((r) => setTimeout(r, 1000)),
+    ]);
     process.exit(0); // don't let an open stdin handle keep the hook alive
   });
 program
