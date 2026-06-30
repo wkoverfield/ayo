@@ -29,7 +29,7 @@ import { cachedCustomPath, ensureCustomSound, playSound, presetPath } from "./so
 const iconPath = fileURLToPath(new URL("../assets/ayo.png", import.meta.url));
 const ICON_PATH: string | undefined = existsSync(iconPath) ? iconPath : undefined;
 
-export function notifyAyo(ayo: Ayo): void {
+export function notifyAyo(ayo: Ayo, opts: { actionable?: boolean } = {}): void {
   const ctx = ayo.context;
   const where = ctx?.repo && ctx?.branch ? ` (${ctx.repo}@${ctx.branch})` : "";
   const urgent = ayo.urgency === "urgent";
@@ -42,7 +42,11 @@ export function notifyAyo(ayo: Ayo): void {
   const toastSound = urgent && !willSound;
 
   if (process.platform === "darwin") {
-    macNotify(title, ayo.body, toastSound, buildCtx(ayo));
+    // A non-actionable toast (e.g. `ayo doctor`'s test) gets no ctx, so it has no
+    // Reply/Resolve/→agent buttons — clicking it can't fire relay calls or route
+    // phantom work against the user's real team.
+    const ctxJSON = opts.actionable === false ? undefined : buildCtx(ayo);
+    macNotify(title, ayo.body, toastSound, ctxJSON);
   } else {
     notifier.notify({ title, message: ayo.body, sound: toastSound, ...(ICON_PATH ? { icon: ICON_PATH } : {}) });
   }
@@ -51,23 +55,27 @@ export function notifyAyo(ayo: Ayo): void {
 /**
  * Fire a test toast through the exact path a real Ayo takes (notifyAyo → the OS
  * toast + signature sound), so `ayo doctor` / `ayo init` can prove the
- * notification + sound pipeline works on THIS machine — the link that fails
- * silently under denied permission, Focus, or DND. Pass the sound the user just
- * picked so they hear what teammates will hear; with no sound we mark it urgent
- * so the toast still makes a sound (an audible check either way).
+ * notification pipeline works on THIS machine — the link that fails silently
+ * under denied permission, Focus, or DND. Non-actionable (no clickable buttons)
+ * so it can never act on the user's real team. Pass the sound the user just
+ * picked (init) to also hear what teammates will hear; omit it (doctor) for a
+ * plain visual check.
  */
 export function fireTestToast(handle: string, sound?: AyoSound | null): void {
-  notifyAyo({
-    id: newAyoId(),
-    teamId: "team_self",
-    from: { id: "user_self", handle, name: handle },
-    to: [handle],
-    kind: "ping",
-    body: "Test Ayo — if you can see and hear this, you're all set. 🎉",
-    urgency: sound ? "normal" : "urgent",
-    sound: sound ?? null,
-    createdAt: new Date().toISOString(),
-  });
+  notifyAyo(
+    {
+      id: newAyoId(),
+      teamId: "team_self",
+      from: { id: "user_self", handle, name: handle },
+      to: [handle],
+      kind: "ping",
+      body: "Test Ayo — if you can see this, notifications are working. 🎉",
+      urgency: "normal",
+      sound: sound ?? null,
+      createdAt: new Date().toISOString(),
+    },
+    { actionable: false },
+  );
 }
 
 /** The actionable-toast payload: what a click can copy / pipe to the agent /

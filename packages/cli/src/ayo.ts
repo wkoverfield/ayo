@@ -13,8 +13,8 @@ import {
   saveConfig,
   saveSession,
   requireSession,
+  loadSession,
   resolveHandle,
-  type Session,
 } from "./config.js";
 import { api, RelayError } from "./client.js";
 import type { SendAyoResponse } from "@ayo-dev/core";
@@ -400,12 +400,9 @@ program
   .option("--no-toast", "skip the test notification")
   .action(async (opts) => {
     const cfg = loadConfig();
-    let s: Session | undefined;
-    try {
-      s = requireSession();
-    } catch {
-      /* not logged in — keep going so the rest of the checks still run */
-    }
+    // loadSession (not requireSession, which process.exit(1)s) so a logged-out
+    // user still gets every other check + actionable next steps.
+    const s = loadSession();
 
     console.log(`relay:   ${cfg.relayUrl}`);
     console.log(`session: ${s ? pc.green(`logged in as ${s.handle}`) : pc.red("not logged in — run `ayo login`")}`);
@@ -434,15 +431,19 @@ program
     console.log(pc.dim("  mcp (use Ayo from inside the agent):"));
     mcpStatus();
 
-    // The link that fails silently: does a toast actually render + a sound play?
-    // Fire one through the real receive path and let the human be the judge.
+    // The link that fails silently: does a toast actually render? We can't know
+    // (the OS exits 0 even when it suppresses the toast under Focus/DND/denied
+    // permission), so fire one and let the human be the judge.
     if (opts.toast !== false) {
       console.log(pc.bold("\nnotifications:"));
+      if (process.platform === "darwin") console.log(pc.dim("  (may take a moment)…"));
       try {
-        fireTestToast(s?.handle ?? "you");
-        console.log("→ fired a test toast + sound — " + pc.dim("see it and hear it? then you're set."));
+        fireTestToast(s?.handle ?? "me");
+        console.log("→ sent a test toast — " + pc.bold("did it appear?"));
         console.log(
-          pc.dim("  Nothing? macOS: System Settings ▸ Notifications (allow Ayo / Script Editor), and turn off Focus/DND."),
+          process.platform === "darwin"
+            ? pc.dim("  Nothing? System Settings ▸ Notifications (allow Ayo / Script Editor), and turn off Focus/DND.")
+            : pc.dim("  Nothing? Check your OS notification settings and Do Not Disturb."),
         );
       } catch (err) {
         console.log(pc.red(`✗ couldn't fire a test toast: ${(err as Error).message}`));
