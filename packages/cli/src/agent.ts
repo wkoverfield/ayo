@@ -20,13 +20,12 @@ import { loadConfig, loadSession } from "./config.js";
 import { isDaemonAlive } from "./daemon-ctl.js";
 import {
   type AgentSurface,
-  type ClickedAction,
-  drainActionQueue,
   getLastSurfaced,
   loadInbox,
   setLastSurfaced,
   upsertInbox,
 } from "./inbox-store.js";
+import { claimPending, type PendingPing, registerSession, repoOf } from "./session-registry.js";
 import { notifyAyo } from "./notify.js";
 
 interface SurfaceOpts {
@@ -34,6 +33,8 @@ interface SurfaceOpts {
   surface: AgentSurface;
   /** Print fresh Ayos to stdout for model injection (Claude). Off for Codex. */
   print: boolean;
+  /** The hook payload Claude/Codex pass on stdin — drives session routing. */
+  hook?: { sessionId?: string; cwd?: string; event?: string };
 }
 
 export async function surfaceUnread(opts: SurfaceOpts): Promise<void> {
@@ -42,12 +43,17 @@ export async function surfaceUnread(opts: SurfaceOpts): Promise<void> {
     const cfg = loadConfig();
     if (!session || !cfg.activeTeamId) return; // not set up — stay silent
 
-    // Toast clicks ("→ My agent") pull a ping's context straight into this
-    // session — surface them immediately, independent of unread dedup. Only the
-    // printing surface drains (so the context isn't consumed silently elsewhere).
+    // Register/refresh this session, then claim the toast-clicked pings routed to
+    // it (route-by-repo, with a next-prompt fallback). Only the printing surface
+    // injects, and a ping never lands in a non-matching repo without the user
+    // acting in that session. See session-registry.ts.
+    const repo = opts.hook?.cwd ? repoOf(opts.hook.cwd) : null;
+    if (opts.hook?.sessionId) {
+      registerSession(opts.hook.sessionId, opts.hook.cwd ?? "", opts.surface, repo);
+    }
     if (opts.print) {
-      const clicked = drainActionQueue().filter((a) => a.action === "agent" && a.context);
-      if (clicked.length) process.stdout.write(formatClicked(clicked));
+      const claimed = claimPending(repo, opts.hook?.event ?? "").filter((p) => p.context);
+      if (claimed.length) process.stdout.write(formatClicked(claimed));
     }
 
     const daemonAlive = isDaemonAlive();
@@ -93,7 +99,7 @@ function formatForAgent(fresh: Ayo[]): string {
 }
 
 /** Clicked-toast context the user explicitly pulled into this session. */
-function formatClicked(clicked: ClickedAction[]): string {
+function formatClicked(clicked: PendingPing[]): string {
   const blocks = clicked.map((a) => `From ${a.from ?? "a teammate"}:\n${a.context}`);
   return [
     `📌 You pulled ${clicked.length} Ayo${clicked.length > 1 ? "s" : ""} into this session from a toast:`,
