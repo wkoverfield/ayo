@@ -4,14 +4,12 @@
  * manages the daemon. Receiving is the daemon's job (ADR 0001/0002).
  */
 
-import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import pc from "picocolors";
 import {
   loadConfig,
   saveConfig,
-  saveSession,
   requireSession,
   loadSession,
   resolveHandle,
@@ -29,6 +27,7 @@ import {
   isDaemonAlive,
 } from "./daemon-ctl.js";
 import { fireTestToast } from "./notify.js";
+import { deviceLogin, runInit, runUninstall } from "./init.js";
 import { surfaceUnread } from "./agent.js";
 import { board } from "./board.js";
 import { hackathonEnd, hackathonExport, hackathonStart, hackathonStatus } from "./hackathon.js";
@@ -54,8 +53,6 @@ function fail(err: unknown): never {
   else console.error(pc.red(`✗ ${(err as Error).message}`));
   process.exit(1);
 }
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Report a send result honestly. The relay tells us who it actually reached and
@@ -87,63 +84,32 @@ function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: bo
   // (reached 0 AND unknown.length > 0 — the warning above already explained it.)
 }
 
-/** Best-effort: open the verification URL in the user's browser. The URL comes
- *  from the relay and is handed to a subprocess, so: only plain https URLs, and
- *  NEVER `shell: true` (which would let URL metacharacters be interpreted). */
-function openBrowser(url: string): void {
-  if (!/^https:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/.test(url)) return; // also skips the dev stub's spaced pseudo-URL
-  const [cmd, args]: readonly [string, string[]] =
-    process.platform === "darwin"
-      ? ["open", [url]]
-      : process.platform === "win32"
-        ? ["cmd.exe", ["/c", "start", "", url]]
-        : ["xdg-open", [url]];
-  try {
-    spawn(cmd, args, { stdio: "ignore", detached: true, shell: false }).unref();
-  } catch {
-    /* no browser — the user can open the URL manually */
-  }
-}
+// ── init / login / uninstall ─────────────────────────────────────────────────
+program
+  .command("init")
+  .description("One-command setup: login, pick a sound, wire your agents, test it")
+  .option("-y, --yes", "non-interactive (accept defaults, skip prompts)", false)
+  .option("--dry-run", "show what would change without changing anything", false)
+  .option("--only <steps>", "comma-separated subset: login,sound,daemon,mcp,hooks,test,team")
+  .action(async (opts) => {
+    try {
+      await runInit(opts);
+    } catch (err) {
+      if (err instanceof RelayError) {
+        console.error(pc.red(`\n✗ ${err.message}`));
+        process.exit(1);
+      }
+      fail(err);
+    }
+  });
 
-// ── login ────────────────────────────────────────────────────────────────────
 program
   .command("login")
   .description("Authenticate with GitHub (device flow)")
   .option("--handle <handle>", "handle to use with the local dev stub", process.env.USER ?? "dev")
   .action(async (opts) => {
     try {
-      const start = await api.deviceStart(opts.handle);
-      console.log(`\n  Open ${pc.cyan(start.verification_uri)}`);
-      console.log(`  Enter code ${pc.bold(start.user_code)}\n`);
-      openBrowser(start.verification_uri);
-
-      // Coerce defensively: a malformed relay response must not produce NaN
-      // (NaN deadline exits instantly; NaN interval spins setTimeout at 0ms).
-      const expiresIn = Number(start.expires_in);
-      const deadline = Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 900) * 1000;
-      const startInterval = Number(start.interval);
-      let interval = Number.isFinite(startInterval) && startInterval > 0 ? startInterval : 5;
-
-      process.stdout.write(pc.dim("  Waiting for authorization"));
-      while (Date.now() < deadline) {
-        // Poll first so the dev stub (which is instantly complete) returns at once.
-        const poll = await api.devicePoll(start.device_code);
-        if (poll.status === "complete") {
-          saveSession({ token: poll.session_token, userId: poll.user.id, handle: poll.user.handle });
-          console.log(pc.green(`\n✓ logged in as ${pc.bold(poll.user.handle)}`));
-          return;
-        }
-        if (poll.status === "slow_down") {
-          // Honor GitHub's new interval (forwarded by the relay), capped so a
-          // repeated slow_down can't ratchet the wait to absurd lengths.
-          const next = Number(poll.interval);
-          interval = Math.min(Number.isFinite(next) && next > 0 ? next : interval + 5, 60);
-        }
-        process.stdout.write(pc.dim("."));
-        await sleep(interval * 1000);
-      }
-      console.error(pc.red("\n✗ login timed out — run `ayo login` again"));
-      process.exit(1);
+      await deviceLogin(opts.handle);
     } catch (err) {
       // Terminal device-flow errors carry a friendly message from the relay —
       // show it without the noisy `unauthorized:` code prefix.
@@ -151,6 +117,17 @@ program
         console.error(pc.red(`\n✗ ${err.message}`));
         process.exit(1);
       }
+      fail(err);
+    }
+  });
+
+program
+  .command("uninstall")
+  .description("Reverse Ayo's local wiring (daemon + agent hooks/MCP)")
+  .action(async () => {
+    try {
+      await runUninstall();
+    } catch (err) {
       fail(err);
     }
   });
