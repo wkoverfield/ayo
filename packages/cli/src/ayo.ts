@@ -271,7 +271,8 @@ program
       if (!members.length) return void console.log(pc.dim("No teammates yet — share a join code."));
       for (const m of members) {
         const dot = m.online ? pc.green("●") : pc.dim("○");
-        console.log(`${dot} ${pc.bold(m.handle)}`);
+        const you = m.handle.toLowerCase() === s.handle.toLowerCase() ? pc.dim(" (you)") : "";
+        console.log(`${dot} ${pc.bold(m.handle)}${you}`);
       }
     } catch (err) {
       fail(err);

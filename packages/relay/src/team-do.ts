@@ -266,11 +266,15 @@ export class TeamHub implements DurableObject {
     if (to.includes("*")) {
       return { recipients: members.filter((m) => m.userId !== senderId), unknownRecipients: [] };
     }
-    const known = new Set(members.map((m) => m.handle));
-    const want = new Set(to);
+    // Match handles case-insensitively: `ayo Kenny` should reach `kenny`, not
+    // silently miss (and now loudly mis-warn). Keep this consistent with
+    // addressedTo so delivery and inbox agree.
+    const known = new Set(members.map((m) => m.handle.toLowerCase()));
+    const want = new Set(to.map((h) => h.toLowerCase()));
     return {
-      recipients: members.filter((m) => want.has(m.handle) && m.userId !== senderId),
-      unknownRecipients: to.filter((h) => !known.has(h)),
+      recipients: members.filter((m) => want.has(m.handle.toLowerCase()) && m.userId !== senderId),
+      // Dedupe so a repeated bad handle (MCP accepts arrays) warns once.
+      unknownRecipients: [...new Set(to.filter((h) => !known.has(h.toLowerCase())))],
     };
   }
 
@@ -523,7 +527,9 @@ export class TeamHub implements DurableObject {
   }
 
   private addressedTo(ayo: Ayo, handle: Handle): boolean {
-    return ayo.to.includes("*") || ayo.to.includes(handle);
+    if (ayo.to.includes("*")) return true;
+    const h = handle.toLowerCase(); // case-insensitive, matching resolveRecipients
+    return ayo.to.some((t) => t.toLowerCase() === h);
   }
 
   private async rememberMember(userId: UserId, handle: Handle): Promise<void> {
