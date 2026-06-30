@@ -88,6 +88,11 @@ export const MAX_DIFF_BYTES = 64 * 1024;
  */
 export type DeliveryState =
   | "sent"
+  // Recipient is heads-down/dnd: accepted + in their inbox, but deliberately NOT
+  // pushed as a live toast (and excluded from reconnect replay, so it never
+  // ambushes them later). Distinct from "sent" (offline → buzz on reconnect) and
+  // "notified" (a toast actually fired). Surfaces when they pull inbox / agent hook.
+  | "held"
   | "delivered"
   | "notified"
   | "read"
@@ -95,6 +100,7 @@ export type DeliveryState =
 
 export const DELIVERY_ORDER: readonly DeliveryState[] = [
   "sent",
+  "held",
   "delivered",
   "notified",
   "read",

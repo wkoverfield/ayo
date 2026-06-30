@@ -65,14 +65,22 @@ function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: bo
   const live = res.deliveredTo.length;
   const queued = res.queuedFor.length;
   const unknown = res.unknownRecipients ?? [];
+  const held = res.heldFor ?? [];
 
   if (unknown.length) {
     const names = unknown.map((h) => pc.bold(h)).join(", ");
     console.log(pc.yellow(`⚠ no such teammate: ${names}`) + pc.dim("  — run `ayo who` to see who you can ping"));
   }
+  if (held.length) {
+    const names = held.join(", ");
+    console.log(pc.dim(`· ${names} ${held.length === 1 ? "is" : "are"} heads-down — no toast; they'll see it when they next check their inbox`));
+  }
 
   if (live + queued > 0) {
     console.log(pc.green(`✓ ${label}`) + pc.dim(` (${live} live, ${queued} queued)`));
+  } else if (held.length > 0) {
+    // Not lost — everyone reached is just focusing; it's in their inbox.
+    console.log(pc.green(`✓ ${label}`) + pc.dim(" (held for focus)"));
   } else if (unknown.length === 0) {
     // A real send that reached no one — not a typo, just an empty room.
     console.log(
