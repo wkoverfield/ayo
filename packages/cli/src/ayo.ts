@@ -14,6 +14,7 @@ import {
   saveSession,
   requireSession,
   resolveHandle,
+  type Session,
 } from "./config.js";
 import { api, RelayError } from "./client.js";
 import type { SendAyoResponse } from "@ayo-dev/core";
@@ -25,7 +26,9 @@ import {
   daemonStatus,
   daemonStop,
   daemonLogs,
+  isDaemonAlive,
 } from "./daemon-ctl.js";
+import { fireTestToast } from "./notify.js";
 import { surfaceUnread } from "./agent.js";
 import { board } from "./board.js";
 import { hackathonEnd, hackathonExport, hackathonStart, hackathonStatus } from "./hackathon.js";
@@ -393,18 +396,57 @@ program
 // ── doctor ───────────────────────────────────────────────────────────────────
 program
   .command("doctor")
-  .description("Check environment + connectivity")
-  .action(async () => {
+  .description("Check your setup: relay, daemon, agent wiring, and a test toast")
+  .option("--no-toast", "skip the test notification")
+  .action(async (opts) => {
     const cfg = loadConfig();
-    const s = requireSession();
-    console.log(`relay:   ${cfg.relayUrl}`);
-    console.log(`session: ${s ? pc.green(`logged in as ${s.handle}`) : pc.red("none")}`);
-    console.log(`team:    ${cfg.activeTeamId ?? pc.dim("none")}`);
+    let s: Session | undefined;
     try {
-      await api.me(s);
-      console.log(pc.green("✓ relay reachable"));
-    } catch (err) {
-      console.log(pc.red(`✗ relay unreachable: ${(err as Error).message}`));
+      s = requireSession();
+    } catch {
+      /* not logged in — keep going so the rest of the checks still run */
+    }
+
+    console.log(`relay:   ${cfg.relayUrl}`);
+    console.log(`session: ${s ? pc.green(`logged in as ${s.handle}`) : pc.red("not logged in — run `ayo login`")}`);
+    console.log(`team:    ${cfg.activeTeamId ?? pc.dim("none — `ayo team create` or `ayo join`")}`);
+
+    if (s) {
+      try {
+        await api.me(s);
+        console.log(pc.green("✓ relay reachable"));
+      } catch (err) {
+        console.log(pc.red(`✗ relay unreachable: ${(err as Error).message}`));
+      }
+    }
+
+    // The daemon is the receiver — without it, Ayos never reach this machine.
+    console.log(
+      isDaemonAlive()
+        ? pc.green("✓ daemon running (ayod)")
+        : pc.yellow("⚠ daemon not running — `ayo daemon install` (or `ayo daemon start`)"),
+    );
+
+    // Where Ayo is (or isn't) wired into your agents.
+    console.log(pc.bold("\nagent wiring:"));
+    console.log(pc.dim("  hooks (surface unread at turn boundaries):"));
+    hooksStatus();
+    console.log(pc.dim("  mcp (use Ayo from inside the agent):"));
+    mcpStatus();
+
+    // The link that fails silently: does a toast actually render + a sound play?
+    // Fire one through the real receive path and let the human be the judge.
+    if (opts.toast !== false) {
+      console.log(pc.bold("\nnotifications:"));
+      try {
+        fireTestToast(s?.handle ?? "you");
+        console.log("→ fired a test toast + sound — " + pc.dim("see it and hear it? then you're set."));
+        console.log(
+          pc.dim("  Nothing? macOS: System Settings ▸ Notifications (allow Ayo / Script Editor), and turn off Focus/DND."),
+        );
+      } catch (err) {
+        console.log(pc.red(`✗ couldn't fire a test toast: ${(err as Error).message}`));
+      }
     }
   });
 

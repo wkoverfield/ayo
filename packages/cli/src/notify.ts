@@ -16,7 +16,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import notifier from "node-notifier";
-import type { Ayo } from "@ayo-dev/core";
+import { newAyoId } from "@ayo-dev/core";
+import type { Ayo, AyoSound } from "@ayo-dev/core";
 import { AYO_DIR, loadConfig } from "./config.js";
 import { cachedCustomPath, ensureCustomSound, playSound, presetPath } from "./sound.js";
 
@@ -45,6 +46,28 @@ export function notifyAyo(ayo: Ayo): void {
   } else {
     notifier.notify({ title, message: ayo.body, sound: toastSound, ...(ICON_PATH ? { icon: ICON_PATH } : {}) });
   }
+}
+
+/**
+ * Fire a test toast through the exact path a real Ayo takes (notifyAyo → the OS
+ * toast + signature sound), so `ayo doctor` / `ayo init` can prove the
+ * notification + sound pipeline works on THIS machine — the link that fails
+ * silently under denied permission, Focus, or DND. Pass the sound the user just
+ * picked so they hear what teammates will hear; with no sound we mark it urgent
+ * so the toast still makes a sound (an audible check either way).
+ */
+export function fireTestToast(handle: string, sound?: AyoSound | null): void {
+  notifyAyo({
+    id: newAyoId(),
+    teamId: "team_self",
+    from: { id: "user_self", handle, name: handle },
+    to: [handle],
+    kind: "ping",
+    body: "Test Ayo — if you can see and hear this, you're all set. 🎉",
+    urgency: sound ? "normal" : "urgent",
+    sound: sound ?? null,
+    createdAt: new Date().toISOString(),
+  });
 }
 
 /** The actionable-toast payload: what a click can copy / pipe to the agent /
