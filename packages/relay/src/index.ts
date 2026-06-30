@@ -86,6 +86,10 @@ export default {
         if (!user) return apiError("invalid_token", "Session user not found.");
         const ct = req.headers.get("content-type")?.split(";")[0]?.trim();
         if (ct === "audio/wav") {
+          // R2 writes + WAV validation cost money; cap uploads per user.
+          if (await overRateLimit(env, `sound:${userId}`, 5, 60)) {
+            return apiError("rate_limited", "Too many sound uploads — wait a minute.");
+          }
           const buf = await req.arrayBuffer();
           const v = await validateWav(buf);
           if (!v.ok) return apiError(v.code, v.message);
