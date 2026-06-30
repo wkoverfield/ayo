@@ -104,7 +104,7 @@ ayo init                        # one command: login, pick a sound, wire your
 ```
 
 `ayo init` ends by sending a real Ayo to yourself, so you experience the whole
-thing — branded toast + your signature sound — in under a minute, no teammate
+thing — a native toast + your signature sound — in under a minute, no teammate
 required. Flags: `--dry-run` (show what it'd do, change nothing), `--yes`
 (non-interactive), `--only login,sound,daemon,mcp,hooks,test,team` (a subset).
 `ayo uninstall` reverses the local wiring (your login + team stay).

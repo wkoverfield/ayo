@@ -1,6 +1,6 @@
 {
   "name": "@ayo-dev/mcp",
-  "version": "0.1.2",
+  "version": "0.1.6",
   "description": "Ayo MCP server — send_ayo, read_inbox, create_handoff, share_context for Codex & Claude.",
   "license": "MIT",
   "author": "Wilson Overfield",
@@ -11,12 +11,23 @@
     "directory": "packages/mcp"
   },
   "bugs": "https://github.com/wkoverfield/ayo/issues",
-  "keywords": ["ayo", "mcp", "model-context-protocol", "claude", "codex", "agent", "tools"],
+  "keywords": [
+    "ayo",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "codex",
+    "agent",
+    "tools"
+  ],
   "type": "module",
   "bin": {
     "ayo-mcp": "./dist/index.js"
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20"
   },

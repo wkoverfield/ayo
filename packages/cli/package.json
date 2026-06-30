@@ -1,6 +1,6 @@
 {
   "name": "@ayo-dev/cli",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Ping your teammates from inside Codex and Claude. The ayo command + the ayod daemon.",
   "license": "MIT",
   "author": "Wilson Overfield",
@@ -11,13 +11,27 @@
     "directory": "packages/cli"
   },
   "bugs": "https://github.com/wkoverfield/ayo/issues",
-  "keywords": ["ayo", "cli", "mcp", "claude", "codex", "hackathon", "team", "agent", "notifications"],
+  "keywords": [
+    "ayo",
+    "cli",
+    "mcp",
+    "claude",
+    "codex",
+    "hackathon",
+    "team",
+    "agent",
+    "notifications"
+  ],
   "type": "module",
   "bin": {
     "ayo": "./dist/ayo.js",
     "ayod": "./dist/ayod.js"
   },
-  "files": ["dist", "assets", "README.md"],
+  "files": [
+    "dist",
+    "assets",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20"
   },
