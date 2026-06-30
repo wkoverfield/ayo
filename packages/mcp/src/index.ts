@@ -161,6 +161,10 @@ server.tool(
   },
   async ({ statusText, status }) => {
     const auth = loadAuth();
+    // NOTE: deliberately differs from the `ayo status` CLI, which PRESERVES your
+    // current availability when only text is given. Here the agent is acting on an
+    // explicit "set my status" intent, so an omitted status defaults to heads-down
+    // (the agent can pass `active` to stay reachable).
     const presence = status ?? "heads-down";
     await relay.setStatus(auth, { status: presence, statusText });
     return text(`Status set: ${presence} — "${statusText}"`);
