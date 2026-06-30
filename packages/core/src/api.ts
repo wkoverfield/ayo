@@ -112,6 +112,12 @@ export interface SendAyoResponse {
   id: AyoId;
   deliveredTo: Handle[];
   queuedFor: Handle[];
+  /**
+   * Requested handles that match no current team member (a typo or a teammate
+   * who hasn't joined yet). Lets the sender learn a directed ping went nowhere
+   * instead of seeing a silent success. Empty for broadcasts (`["*"]`).
+   */
+  unknownRecipients: Handle[];
 }
 
 // ── Inbox / state ──────────────────────────────────────────────────────────

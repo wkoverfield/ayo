@@ -230,7 +230,7 @@ export class TeamHub implements DurableObject {
     // Index so the flat `POST /v1/ayo/:id/{read,resolve}` path can find the team.
     await this.env.AYO_KV.put(`ayoteam:${ayo.id}`, teamId, { expirationTtl: 60 * 60 * 24 * 30 });
 
-    const recipients = await this.resolveRecipients(input.to, userId);
+    const { recipients, unknownRecipients } = await this.resolveRecipients(input.to, userId);
     const deliveredTo: Handle[] = [];
     const queuedFor: Handle[] = [];
 
@@ -246,16 +246,36 @@ export class TeamHub implements DurableObject {
       }
     }
 
-    const res: SendAyoResponse = { id: ayo.id, deliveredTo, queuedFor };
+    const res: SendAyoResponse = { id: ayo.id, deliveredTo, queuedFor, unknownRecipients };
     return Response.json(res);
   }
 
-  /** `["*"]` = everyone but the sender; otherwise the named handles. */
-  private async resolveRecipients(to: Handle[], senderId: UserId): Promise<Member[]> {
+  /**
+   * `["*"]` = everyone but the sender; otherwise the named handles. Also reports
+   * requested handles that match no member, so the sender learns a directed ping
+   * went nowhere (a typo or a not-yet-joined teammate) instead of getting a
+   * silent success. A handle is "unknown" only if it's in no member roster at
+   * all — the sender's own handle is a known member (just self-excluded from
+   * delivery), so it is never flagged.
+   */
+  private async resolveRecipients(
+    to: Handle[],
+    senderId: UserId,
+  ): Promise<{ recipients: Member[]; unknownRecipients: Handle[] }> {
     const members = await this.allMembers();
-    if (to.includes("*")) return members.filter((m) => m.userId !== senderId);
-    const want = new Set(to);
-    return members.filter((m) => want.has(m.handle) && m.userId !== senderId);
+    if (to.includes("*")) {
+      return { recipients: members.filter((m) => m.userId !== senderId), unknownRecipients: [] };
+    }
+    // Match handles case-insensitively: `ayo Kenny` should reach `kenny`, not
+    // silently miss (and now loudly mis-warn). Keep this consistent with
+    // addressedTo so delivery and inbox agree.
+    const known = new Set(members.map((m) => m.handle.toLowerCase()));
+    const want = new Set(to.map((h) => h.toLowerCase()));
+    return {
+      recipients: members.filter((m) => want.has(m.handle.toLowerCase()) && m.userId !== senderId),
+      // Dedupe so a repeated bad handle (MCP accepts arrays) warns once.
+      unknownRecipients: [...new Set(to.filter((h) => !known.has(h.toLowerCase())))],
+    };
   }
 
   // ── Inbox + state changes ─────────────────────────────────────────────────
@@ -507,7 +527,9 @@ export class TeamHub implements DurableObject {
   }
 
   private addressedTo(ayo: Ayo, handle: Handle): boolean {
-    return ayo.to.includes("*") || ayo.to.includes(handle);
+    if (ayo.to.includes("*")) return true;
+    const h = handle.toLowerCase(); // case-insensitive, matching resolveRecipients
+    return ayo.to.some((t) => t.toLowerCase() === h);
   }
 
   private async rememberMember(userId: UserId, handle: Handle): Promise<void> {

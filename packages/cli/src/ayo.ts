@@ -16,6 +16,7 @@ import {
   resolveHandle,
 } from "./config.js";
 import { api, RelayError } from "./client.js";
+import type { SendAyoResponse } from "@ayo-dev/core";
 import { captureContext } from "./context.js";
 import {
   daemonInstall,
@@ -52,6 +53,36 @@ function fail(err: unknown): never {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Report a send result honestly. The relay tells us who it actually reached and
+ * which requested handles match no teammate — so we never print a green ✓ for an
+ * Ayo that went nowhere (a typo'd or not-yet-joined handle used to look like a
+ * success). Shared by `send`, `handoff`, and `team` broadcast.
+ */
+function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: boolean } = {}): void {
+  const label = opts.label ?? "ayo sent";
+  const live = res.deliveredTo.length;
+  const queued = res.queuedFor.length;
+  const unknown = res.unknownRecipients ?? [];
+
+  if (unknown.length) {
+    const names = unknown.map((h) => pc.bold(h)).join(", ");
+    console.log(pc.yellow(`⚠ no such teammate: ${names}`) + pc.dim("  — run `ayo who` to see who you can ping"));
+  }
+
+  if (live + queued > 0) {
+    console.log(pc.green(`✓ ${label}`) + pc.dim(` (${live} live, ${queued} queued)`));
+  } else if (unknown.length === 0) {
+    // A real send that reached no one — not a typo, just an empty room.
+    console.log(
+      opts.broadcast
+        ? pc.yellow("· nobody to reach yet — invite a teammate with a join code")
+        : pc.yellow("· reached no one"),
+    );
+  }
+  // (reached 0 AND unknown.length > 0 — the warning above already explained it.)
+}
 
 /** Best-effort: open the verification URL in the user's browser. The URL comes
  *  from the relay and is handed to a subprocess, so: only plain https URLs, and
@@ -178,7 +209,7 @@ team
         urgency: opts.urgent ? "urgent" : "normal",
         context: captureContext(),
       });
-      console.log(pc.green(`✓ team ayo sent`) + pc.dim(` (${res.deliveredTo.length} live, ${res.queuedFor.length} queued)`));
+      reportSend(res, { label: "team ayo sent", broadcast: true });
     } catch (err) {
       fail(err);
     }
@@ -222,6 +253,27 @@ program
       const results = await Promise.allSettled(ayos.map((a) => api.markRead(s, a.id)));
       const failed = results.filter((r) => r.status === "rejected").length;
       if (failed) console.error(pc.yellow(`⚠ ${failed} read receipt(s) didn't reach the relay`));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+// ── who (handles you can ping) ───────────────────────────────────────────────
+program
+  .command("who")
+  .description("List who's on your team (the handles you can ping)")
+  .action(async () => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      const { members } = await api.members(s, cfg.activeTeamId);
+      if (!members.length) return void console.log(pc.dim("No teammates yet — share a join code."));
+      for (const m of members) {
+        const dot = m.online ? pc.green("●") : pc.dim("○");
+        const you = m.handle.toLowerCase() === s.handle.toLowerCase() ? pc.dim(" (you)") : "";
+        console.log(`${dot} ${pc.bold(m.handle)}${you}`);
+      }
     } catch (err) {
       fail(err);
     }
@@ -408,7 +460,7 @@ program
         urgency: opts.urgent ? "urgent" : "normal",
         context: ctx,
       });
-      console.log(pc.green(`✓ handoff sent`) + pc.dim(` (${res.deliveredTo.length} live, ${res.queuedFor.length} queued)`));
+      reportSend(res, { label: "handoff sent" });
       if (ctx?.repo) {
         const bits = [`${ctx.repo}@${ctx.branch ?? "?"}`, `${ctx.changedFiles?.length ?? 0} changed`];
         if (ctx.diff) bits.push("full diff");
@@ -443,9 +495,7 @@ program
         urgency: opts.urgent ? "urgent" : "normal",
         context: captureContext({ withDiff: opts.withDiff }),
       });
-      const live = res.deliveredTo.length;
-      const queued = res.queuedFor.length;
-      console.log(pc.green(`✓ ayo sent`) + pc.dim(` (${live} live, ${queued} queued)`));
+      reportSend(res);
     } catch (err) {
       fail(err);
     }
