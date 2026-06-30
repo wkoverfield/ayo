@@ -165,19 +165,33 @@ interface JsonHost {
 
 const JSON_HOSTS: readonly JsonHost[] = [
   { key: "cursor", label: "Cursor", path: join(homedir(), ".cursor", "mcp.json") },
-  // Future (just add the path): Windsurf ~/.codeium/windsurf/mcp_config.json,
-  // VS Code, Zed — same `mcpServers` shape.
+  // Same `mcpServers` shape, so a one-line add: Windsurf
+  // (~/.codeium/windsurf/mcp_config.json). NOTE: VS Code (`servers` key) and Zed
+  // (`context_servers`, JSONC) use a DIFFERENT shape — they'd need their own
+  // factory, not this one.
 ] as const;
 
-type McpServers = { mcpServers?: Record<string, unknown> };
+/** A plain JSON object (not null, not an array, not a primitive). */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** Parse a config file into a plain object. null = unreadable/unparseable/not a
+ *  plain object — callers must NOT clobber it (we'd lose the user's data). */
+function readConfigObject(path: string): Record<string, unknown> | null {
+  if (!existsSync(path)) return {};
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return isPlainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 function jsonHostInstalled(path: string): boolean {
-  if (!existsSync(path)) return false;
-  try {
-    return Boolean((JSON.parse(readFileSync(path, "utf8")) as McpServers)?.mcpServers?.[SERVER_NAME]);
-  } catch {
-    return false;
-  }
+  const cfg = readConfigObject(path);
+  const servers = cfg?.mcpServers;
+  return isPlainObject(servers) && Boolean(servers[SERVER_NAME]);
 }
 
 function installJsonHost(path: string): "installed" | "already" | "absent" | "error" {
@@ -185,19 +199,18 @@ function installJsonHost(path: string): "installed" | "already" | "absent" | "er
   // for someone who doesn't use it.
   if (!existsSync(dirname(path))) return "absent";
   try {
-    let cfg: McpServers = {};
-    if (existsSync(path)) {
-      // Don't clobber a config we can't parse (e.g. JSONC with comments) — that
-      // would wipe the user's other MCP servers. Bail instead.
-      try {
-        cfg = (JSON.parse(readFileSync(path, "utf8")) as McpServers) ?? {};
-      } catch {
-        return "error";
-      }
-    }
-    if (cfg.mcpServers?.[SERVER_NAME]) return "already";
+    // null = unparseable OR not a plain object (array / primitive). Either way,
+    // bail rather than clobber — overwriting would wipe the user's other servers
+    // (JSON.stringify silently drops non-index props of an array, etc.).
+    const cfg = readConfigObject(path);
+    if (cfg === null) return "error";
+    // Same guard one level down: an mcpServers that isn't a plain object would be
+    // silently replaced by the spread below, losing its contents.
+    const existing = cfg.mcpServers;
+    if (existing !== undefined && !isPlainObject(existing)) return "error";
+    if (isPlainObject(existing) && existing[SERVER_NAME]) return "already";
     const { command, args } = serverCommand();
-    cfg.mcpServers = { ...(cfg.mcpServers ?? {}), [SERVER_NAME]: { command, args } };
+    cfg.mcpServers = { ...(existing ?? {}), [SERVER_NAME]: { command, args } };
     writeAtomic(path, `${JSON.stringify(cfg, null, 2)}\n`);
     return "installed";
   } catch {
@@ -206,13 +219,14 @@ function installJsonHost(path: string): "installed" | "already" | "absent" | "er
 }
 
 function uninstallJsonHost(path: string): "removed" | "absent" | "error" {
+  // jsonHostInstalled already guarantees a plain-object cfg with a plain-object
+  // mcpServers containing our key, but re-read defensively rather than clobber.
   if (!jsonHostInstalled(path)) return "absent";
   try {
-    const cfg = JSON.parse(readFileSync(path, "utf8")) as McpServers;
-    if (cfg.mcpServers) {
-      delete cfg.mcpServers[SERVER_NAME];
-      if (Object.keys(cfg.mcpServers).length === 0) delete cfg.mcpServers;
-    }
+    const cfg = readConfigObject(path);
+    if (cfg === null || !isPlainObject(cfg.mcpServers)) return "error";
+    delete cfg.mcpServers[SERVER_NAME];
+    if (Object.keys(cfg.mcpServers).length === 0) delete cfg.mcpServers;
     writeAtomic(path, `${JSON.stringify(cfg, null, 2)}\n`);
     return "removed";
   } catch {
