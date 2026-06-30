@@ -233,11 +233,19 @@ export class TeamHub implements DurableObject {
     const { recipients, unknownRecipients } = await this.resolveRecipients(input.to, userId);
     const deliveredTo: Handle[] = [];
     const queuedFor: Handle[] = [];
+    const heldFor: Handle[] = [];
+    // Urgent (🚨) breaks through focus; everything else respects it.
+    const breakthrough = ayo.urgency === "urgent";
 
     for (const m of recipients) {
       await this.setDelivery(ayo.id, m.userId, "sent");
       const sockets = this.socketsForUser(m.userId);
-      if (sockets.length > 0) {
+      const focusing = (m.status === "heads-down" || m.status === "dnd") && !breakthrough;
+      if (focusing) {
+        // Online but heads-down: hold it for their inbox / agent surface — no
+        // real-time toast. This is the anti-Slack promise (don't interrupt focus).
+        heldFor.push(m.handle);
+      } else if (sockets.length > 0) {
         const frame: ServerFrame = { t: "ayo", ayo };
         for (const s of sockets) s.send(JSON.stringify(frame));
         deliveredTo.push(m.handle);
@@ -246,7 +254,7 @@ export class TeamHub implements DurableObject {
       }
     }
 
-    const res: SendAyoResponse = { id: ayo.id, deliveredTo, queuedFor, unknownRecipients };
+    const res: SendAyoResponse = { id: ayo.id, deliveredTo, queuedFor, unknownRecipients, heldFor };
     return Response.json(res);
   }
 

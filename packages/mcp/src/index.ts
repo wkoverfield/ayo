@@ -40,10 +40,12 @@ function sentSummary(res: SendAyoResponse, ctx?: AyoContext): string {
   // for a ping that reached no one (a typo'd or not-yet-joined handle).
   const unknown = res.unknownRecipients ?? [];
   const warn = unknown.length ? ` ⚠ No such teammate (reached no one): ${unknown.join(", ")}.` : "";
+  const held = res.heldFor ?? [];
+  const focus = held.length ? ` Held for focus (heads-down, inbox only): ${held.join(", ")}.` : "";
   const where = ctx?.repo
     ? ` Context: ${ctx.repo}@${ctx.branch ?? "?"}, ${ctx.changedFiles?.length ?? 0} changed file(s)${ctx.diff ? ", full diff included" : ""}.`
     : "";
-  return `Sent ${res.id}. Delivered (online): ${live}. Queued (offline): ${queued}.${warn}${where}`;
+  return `Sent ${res.id}. Delivered (online): ${live}. Queued (offline): ${queued}.${warn}${focus}${where}`;
 }
 
 /** Merge captured git context with an optional agent note. */

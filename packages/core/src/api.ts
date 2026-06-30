@@ -118,6 +118,12 @@ export interface SendAyoResponse {
    * instead of seeing a silent success. Empty for broadcasts (`["*"]`).
    */
   unknownRecipients: Handle[];
+  /**
+   * Recipients who are heads-down / dnd, so this (non-urgent) Ayo was held for
+   * their inbox instead of popping a real-time toast. Lets the sender see "Maya's
+   * focusing — she'll get it later" rather than expecting an instant buzz.
+   */
+  heldFor: Handle[];
 }
 
 // ── Inbox / state ──────────────────────────────────────────────────────────
