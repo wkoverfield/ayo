@@ -197,12 +197,14 @@ export default {
         // GitHub's setup ping — ACK so the webhook shows green.
         const event = req.headers.get("x-github-event") ?? "";
         if (event === "ping") return json({ ok: true });
+        // Per-token cap BEFORE the membership KV read (so a valid-HMAC caller
+        // can't probe membership at the full rate).
+        if (await overRateLimit(env, `hook:${token}`, 60, 60)) {
+          return apiError("rate_limited", "This webhook is firing too fast — slow down.");
+        }
         // Creator must still be a member (mirrors the generic hook; no re-roster).
         if (!(await getMembership(env, hook.teamId, hook.userId as never))) {
           return apiError("not_found", "Unknown or revoked webhook.");
-        }
-        if (await overRateLimit(env, `hook:${token}`, 60, 60)) {
-          return apiError("rate_limited", "This webhook is firing too fast — slow down.");
         }
         let payload: unknown;
         try {
@@ -213,8 +215,13 @@ export default {
         const mapped = mapGithubEvent(event, payload);
         // Not an event we route (or self-directed) — ACK 200 so GitHub won't retry.
         if (!mapped) return json({ ok: true, routed: false });
+        // Defense in depth at the trust boundary: recipients come from the payload,
+        // so keep only real GitHub-login shapes (no "*", no broadcast) and cap the
+        // fanout, regardless of what mapGithubEvent returns.
+        const recipients = mapped.to.filter((h) => /^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/.test(h)).slice(0, 20);
+        if (recipients.length === 0) return json({ ok: true, routed: false });
         const body = `[${hook.label}] ${mapped.body}`.slice(0, 4096);
-        const send: SendAyoRequest = { to: mapped.to, body, kind: "ping", urgency: "normal" };
+        const send: SendAyoRequest = { to: recipients, body, kind: "ping", urgency: "normal" };
         return await sendAsMember(env, hook.teamId, hook.userId, hook.handle, send);
       }
 

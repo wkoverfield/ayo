@@ -9,33 +9,40 @@
  * dropped to avoid noise.
  */
 
-/** Constant-time compare of two equal-length hex strings (avoids a timing side
- *  channel on signature verification). */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+/** Decode a hex string to bytes; null if malformed (odd length / non-hex). */
+function hexToBytes(hex: string): Uint8Array | null {
+  if (hex.length === 0 || hex.length % 2 !== 0) return null;
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    const byte = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    if (Number.isNaN(byte)) return null;
+    out[i] = byte;
+  }
+  return out;
 }
 
-/** Verify GitHub's `X-Hub-Signature-256: sha256=<hex>` over the RAW body. */
+/**
+ * Verify GitHub's `X-Hub-Signature-256: sha256=<hex>` over the RAW body.
+ * Uses `crypto.subtle.verify` — the blessed constant-time comparison path — so
+ * there's no bespoke timing-safe compare to get wrong. A malformed/short/absent
+ * signature simply fails verification (never throws).
+ */
 export async function verifyGithubSignature(
   secret: string,
   rawBody: string,
   header: string | null,
 ): Promise<boolean> {
   if (!header || !header.startsWith("sha256=")) return false;
-  const provided = header.slice("sha256=".length);
+  const provided = hexToBytes(header.slice("sha256=".length));
+  if (!provided) return false;
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"],
+    ["verify"],
   );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
-  const hex = [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return timingSafeEqual(hex, provided);
+  return crypto.subtle.verify("HMAC", key, provided, new TextEncoder().encode(rawBody));
 }
 
 /** @-mentions in a comment body → deduped logins. */
@@ -92,6 +99,9 @@ export function mapGithubEvent(event: string, payload: any): MappedEvent | null 
   // 2) @-mentions in an issue or PR comment → ping the mentioned people.
   if ((event === "issue_comment" || event === "pull_request_review_comment") && action === "created") {
     const comment = payload?.comment;
+    // issue_comment carries `issue.number` (GitHub models PR conversation comments
+    // as issues too); pull_request_review_comment carries `pull_request.number` and
+    // no `issue` key — so this order resolves both. Don't "simplify" the order.
     const number = payload?.issue?.number ?? payload?.pull_request?.number;
     if (!comment?.body || number == null) return null;
     const targets = mentions(comment.body).filter((h) => h !== sender);
@@ -102,8 +112,9 @@ export function mapGithubEvent(event: string, payload: any): MappedEvent | null 
     };
   }
 
-  // 3) Review submitted → ping the PR author (unless they reviewed their own).
-  if (event === "pull_request_review" && action === "submitted") {
+  // 3) Review submitted OR dismissed → ping the PR author (unless it's their own).
+  //    A dismissal arrives as a distinct action with review.state="dismissed".
+  if (event === "pull_request_review" && (action === "submitted" || action === "dismissed")) {
     const pr = payload?.pull_request;
     const author: string | undefined = pr?.user?.login;
     const state: string = payload?.review?.state ?? "";

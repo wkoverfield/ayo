@@ -305,6 +305,9 @@ hook
       const s = requireSession();
       const cfg = loadConfig();
       if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      if (opts.github && opts.to) {
+        console.log(pc.yellow("⚠ --to is ignored for GitHub webhooks — recipients come from the event (reviewer, mentioned, author)."));
+      }
       const info = await api.createWebhook(s, cfg.activeTeamId, {
         label: opts.label ?? (opts.github ? "github" : "hook"),
         to: opts.github || !opts.to ? undefined : resolveHandle(cfg, opts.to),
