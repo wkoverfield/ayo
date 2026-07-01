@@ -113,7 +113,7 @@ server.tool(
 server.tool(
   "create_handoff",
   "When the human needs to hand work to a teammate, use this — it packages the " +
-    "branch, changed files, diff stat, and the blocker into one Ayo AND returns a " +
+    "branch, changed files, diff stat, and the blocker into one Ayo, and returns a " +
     "shareable link that renders the context for someone not yet on Ayo (so it " +
     "works even if the teammate isn't set up). Set withDiff to include the full " +
     "diff — it covers all uncommitted changes (staged AND unstaged) and may " +
