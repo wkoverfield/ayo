@@ -18,10 +18,20 @@ import type {
   InviteResponse,
   RotateCodeRequest,
   RotateCodeResponse,
+  CreateHandoffLinkRequest,
+  CreateHandoffLinkResponse,
+  HandoffShare,
   MeResponse,
   PublicUser,
 } from "@ayo-dev/core";
-import { newUserId, SOUND_PRESETS, MAX_TEAM_SIZE } from "@ayo-dev/core";
+import {
+  newUserId,
+  SOUND_PRESETS,
+  MAX_TEAM_SIZE,
+  HANDOFF_LINK_TTL_HOURS,
+  HANDOFF_LINK_MAX_TTL_HOURS,
+  MAX_HANDOFF_SHARE_BYTES,
+} from "@ayo-dev/core";
 import { apiError, json, type Env } from "./env.js";
 import { overRateLimit, clientIp } from "./rate-limit.js";
 import {
@@ -44,6 +54,8 @@ import {
   teamForAyo,
   teamsForUser,
 } from "./directory.js";
+import { getHandoffShare, putHandoffShare } from "./handoff.js";
+import { renderHandoffPage, renderExpiredPage } from "./handoff-page.js";
 
 export { TeamHub } from "./team-do.js";
 
@@ -69,6 +81,27 @@ export default {
           return apiError("rate_limited", "Polling too fast — wait a minute.");
         }
         return await handleDevicePoll(req, env);
+      }
+
+      // ── Public handoff share page (no session — the "Loom mechanic") ────
+      // Renders a handoff's context to a non-user, with an install→join CTA.
+      const shareMatch = path.match(/^\/h\/([A-Za-z0-9_-]{16,64})$/);
+      if (shareMatch && req.method === "GET") {
+        const share = await getHandoffShare(env, shareMatch[1]!);
+        const html = share ? renderHandoffPage(share) : renderExpiredPage();
+        return new Response(html, {
+          status: share ? 200 : 404,
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": share ? "public, max-age=60" : "no-store",
+            // Strict CSP: no scripts, inline styles only, unframeable. Defense in
+            // depth atop escapeHtml on a public page rendering arbitrary content.
+            "content-security-policy":
+              "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "no-referrer",
+          },
+        });
       }
 
       // ── Everything below requires a session ─────────────────────────────
@@ -206,6 +239,51 @@ export default {
           codeExpiresAt: team.codeExpiresAt ?? null,
         };
         return json(body);
+      }
+
+      // ── Mint a handoff share link (member only) — the "Loom mechanic" ───
+      const hlMatch = path.match(/^\/v1\/teams\/(team_[^/]+)\/handoff-link$/);
+      if (hlMatch && req.method === "POST") {
+        const teamId = hlMatch[1] as never;
+        const team = await getTeam(env, teamId);
+        if (!team) return apiError("team_not_found", "No team with that id.");
+        const membership = await getMembership(env, teamId, userId);
+        if (!membership) return apiError("not_a_member", "You are not a member of this team.");
+        // Minting writes KV; cap per user.
+        if (await overRateLimit(env, `handoff-link:${userId}`, 20, 60)) {
+          return apiError("rate_limited", "Too many handoff links — give it a moment.");
+        }
+        const input = (await req.json().catch(() => ({}))) as CreateHandoffLinkRequest;
+        if (typeof input.blocker !== "string" || input.blocker.trim() === "") {
+          return apiError("bad_request", "A handoff link needs a blocker/body.");
+        }
+        const user = await loadUser(env, userId);
+        if (!user) return apiError("invalid_token", "Session user not found.");
+        // A public URL always carries an expiry: default TTL, clamped to
+        // [60s (KV floor), max]. `expiresAt` derives from the same clamped ttl.
+        const hrs = Number(input.expiresInHours);
+        const wantHrs =
+          Number.isFinite(hrs) && hrs > 0 ? Math.min(hrs, HANDOFF_LINK_MAX_TTL_HOURS) : HANDOFF_LINK_TTL_HOURS;
+        const ttl = Math.max(Math.round(wantHrs * 3600), 60);
+        const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+        const share: HandoffShare = {
+          v: 1,
+          from: { handle: membership.handle, name: user.name },
+          teamName: team.name,
+          blocker: input.blocker,
+          note: input.note,
+          context: input.context,
+          // Default: embed the join code (frictionless conversion). Opt out per-link.
+          joinCode: input.includeJoinCode === false ? undefined : team.joinCode,
+          createdAt: new Date().toISOString(),
+          expiresAt,
+        };
+        if (JSON.stringify(share).length > MAX_HANDOFF_SHARE_BYTES) {
+          return apiError("payload_too_large", "Handoff context too large to share.");
+        }
+        const token = await putHandoffShare(env, share, ttl);
+        const resBody: CreateHandoffLinkResponse = { token, url: `${url.origin}/h/${token}`, expiresAt };
+        return json(resBody, { status: 201 });
       }
 
       // ── Flat ayo read/resolve -> resolve team, then forward ─────────────

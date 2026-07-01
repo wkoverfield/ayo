@@ -121,6 +121,57 @@ export interface RotateCodeResponse {
 /** Max members per team — a leaked, non-rotating code + no cap = a floodable team. */
 export const MAX_TEAM_SIZE = 50;
 
+// ── Handoff share links ("Loom mechanic": a public, expiring URL that renders a
+//    handoff's context to a NON-user and converts them) ───────────────────────
+
+/** Default lifetime of a handoff share link. Links are ephemeral by design — a
+ *  handoff is a "pick this up now" artifact, not a permanent document. */
+export const HANDOFF_LINK_TTL_HOURS = 7 * 24;
+/** Hard cap so a caller can't mint a near-permanent public URL. */
+export const HANDOFF_LINK_MAX_TTL_HOURS = 30 * 24;
+/** Cap on a serialized share snapshot (guards KV + the public render path). The
+ *  diff alone is already capped at MAX_DIFF_BYTES; this bounds the whole packet. */
+export const MAX_HANDOFF_SHARE_BYTES = 128 * 1024;
+
+/** `POST /v1/teams/:id/handoff-link` — mint a shareable link for a handoff. */
+export interface CreateHandoffLinkRequest {
+  /** What the recipient needs to pick up (the handoff body). */
+  blocker: string;
+  /** Optional summary / next steps. */
+  note?: string;
+  /** Curated work context; the caller decides what to include (diff is opt-in). */
+  context?: AyoContext;
+  /** Auto-expire after N hours; clamped to [~1 min, HANDOFF_LINK_MAX_TTL_HOURS]. */
+  expiresInHours?: number;
+  /** Embed the team's join code so a non-user installs → joins in one step.
+   *  Default true — frictionless conversion is the point, and both the link and
+   *  the code expire (the code is also rotatable; see MAX_TEAM_SIZE / S5). */
+  includeJoinCode?: boolean;
+}
+
+export interface CreateHandoffLinkResponse {
+  token: string;
+  /** Absolute URL to share. */
+  url: string;
+  /** ISO timestamp the link expires. */
+  expiresAt: string;
+}
+
+/** The self-contained snapshot a share link renders. Everything the public page
+ *  needs, so the render path never touches the team DO. `v` guards the shape. */
+export interface HandoffShare {
+  v: 1;
+  from: { handle: Handle; name: string };
+  teamName: string;
+  blocker: string;
+  note?: string;
+  context?: AyoContext;
+  /** Present iff the sender opted to embed it — enables the 1-step join CTA. */
+  joinCode?: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
 export interface MembersResponse {
   members: MemberPresence[];
 }

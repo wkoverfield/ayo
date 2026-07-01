@@ -122,12 +122,27 @@ server.tool(
     note: z.string().optional().describe("A short summary of the state and next steps."),
     withDiff: z.boolean().optional().describe("Attach the full git diff (default false; may contain secrets)."),
     urgent: z.boolean().optional(),
+    link: z
+      .boolean()
+      .optional()
+      .describe("Also mint a shareable web link that works for people not yet on Ayo (default true)."),
   },
-  async ({ to, blocker, note, withDiff, urgent }) => {
+  async ({ to, blocker, note, withDiff, urgent, link }) => {
     const auth = loadAuth();
     const ctx = withNote(captureContext({ withDiff: withDiff ?? false }), note);
     const res = await relay.send(auth, { to, body: blocker, kind: "handoff", urgency: urgent ? "urgent" : "normal", context: ctx });
-    return text(`Handoff — ${sentSummary(res, ctx)}`);
+    let out = `Handoff — ${sentSummary(res, ctx)}`;
+    // The Loom mechanic: a public link a non-user can open. Best-effort — the
+    // handoff already sent, so a link failure must not fail the tool call.
+    if (link !== false) {
+      try {
+        const l = await relay.createHandoffLink(auth, { blocker, note, context: ctx });
+        out += `\nShare link (works before they're on Ayo): ${l.url}`;
+      } catch (err) {
+        out += `\n(couldn't mint a share link: ${err instanceof Error ? err.message : "unknown"})`;
+      }
+    }
+    return text(out);
   },
 );
 

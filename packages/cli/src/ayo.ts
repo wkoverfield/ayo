@@ -606,6 +606,8 @@ program
   .description("Hand off your work to a teammate (branch, changed files, diff stat, note)")
   .option("--with-diff", "attach the full git diff (may contain uncommitted secrets)", false)
   .option("--urgent", "mark urgent", false)
+  .option("--no-link", "don't also mint a shareable web link for the handoff")
+  .option("--expires <hours>", "when the share link expires (default 7 days)")
   .action(async (target: string, message: string[], opts) => {
     try {
       const s = requireSession();
@@ -614,9 +616,10 @@ program
       const broadcast = ["all", "team", "everyone"].includes(target);
       const to = broadcast ? ["*"] : [resolveHandle(cfg, target)];
       const ctx = captureContext({ withDiff: opts.withDiff });
+      const body = message.join(" ") || "Handing this off.";
       const res = await api.send(s, cfg.activeTeamId, {
         to,
-        body: message.join(" ") || "Handing this off.",
+        body,
         kind: "handoff",
         urgency: opts.urgent ? "urgent" : "normal",
         context: ctx,
@@ -629,6 +632,22 @@ program
         console.log(pc.dim(`  ${bits.join(" · ")}`));
       } else {
         console.log(pc.dim("  (not in a git repo — sent without code context)"));
+      }
+      // The Loom mechanic: a shareable web link that works for non-users too.
+      // Best-effort — the handoff already sent; a link failure must not error out.
+      if (opts.link) {
+        try {
+          const hrs = opts.expires ? Number(opts.expires) : undefined;
+          const link = await api.createHandoffLink(s, cfg.activeTeamId, {
+            blocker: body,
+            context: ctx,
+            expiresInHours: Number.isFinite(hrs) ? hrs : undefined,
+          });
+          console.log(pc.green("  🔗 share link: ") + pc.cyan(link.url));
+          console.log(pc.dim("     works for anyone, even before they're on Ayo — expires automatically."));
+        } catch (err) {
+          console.log(pc.dim(`  (couldn't mint a share link: ${err instanceof Error ? err.message : "unknown"})`));
+        }
       }
     } catch (err) {
       fail(err);

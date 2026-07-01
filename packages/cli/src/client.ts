@@ -15,6 +15,8 @@ import type {
   JoinTeamResponse,
   InviteResponse,
   RotateCodeResponse,
+  CreateHandoffLinkRequest,
+  CreateHandoffLinkResponse,
   MembersResponse,
   MeResponse,
   SendAyoRequest,
@@ -94,6 +96,9 @@ export const api = {
 
   send: (s: Session, teamId: string, body: SendAyoRequest) =>
     call<SendAyoResponse>(`/v1/teams/${teamId}/ayo`, { method: "POST", body, token: s.token }),
+
+  createHandoffLink: (s: Session, teamId: string, body: CreateHandoffLinkRequest) =>
+    call<CreateHandoffLinkResponse>(`/v1/teams/${teamId}/handoff-link`, { method: "POST", body, token: s.token }),
 
   inbox: (s: Session, teamId: string, since?: string, unreadOnly = false) => {
     const q = new URLSearchParams();
