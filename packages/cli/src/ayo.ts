@@ -458,7 +458,10 @@ program
           ? (JSON.parse(readFileSync(ASK_MAP_PATH, "utf8")) as Record<string, { id: string; body: string; from: string }>)
           : {};
         const mapped = map[which];
-        if (!mapped) return console.log(pc.yellow(`No ask #${which} — run \`ayo agents\` to see what's waiting.`));
+        // Also guards a stale/old-format asks.json (string values) — regenerate.
+        if (!mapped || typeof mapped.id !== "string") {
+          return console.log(pc.yellow(`No ask #${which} — run \`ayo agents\` to see what's waiting.`));
+        }
         id = mapped.id;
         echo = ` ${pc.bold(`"${mapped.body}"`)} ${pc.dim(`(${mapped.from})`)} →`;
       }
