@@ -12,6 +12,11 @@ export interface TeamMeta {
   id: TeamId;
   name: string;
   joinCode: string;
+  /** The creator — the only one who can rotate the join code. Optional for
+   *  backward-compat with teams created before this field existed. */
+  ownerId?: UserId;
+  /** ISO timestamp the join code expires; absent = never. */
+  codeExpiresAt?: string | null;
 }
 
 export interface Membership {
@@ -30,13 +35,39 @@ function joinCode(): string {
   return s;
 }
 
-export async function createTeam(env: Env, name: string): Promise<TeamMeta> {
+export async function createTeam(env: Env, name: string, ownerId?: UserId): Promise<TeamMeta> {
   const id = newTeamId();
   const code = joinCode();
-  const meta: TeamMeta = { id, name, joinCode: code };
+  const meta: TeamMeta = { id, name, joinCode: code, ownerId, codeExpiresAt: null };
   await env.AYO_KV.put(`team:${id}`, JSON.stringify(meta));
   await env.AYO_KV.put(`joincode:${code}`, id);
   return meta;
+}
+
+/** Count current members of a team (for the size cap). */
+export async function countMembers(env: Env, teamId: TeamId): Promise<number> {
+  // list() paginates at 1000 keys; team sizes are far below the cap, so one page.
+  const list = await env.AYO_KV.list({ prefix: `member:${teamId}:` });
+  return list.keys.length;
+}
+
+/**
+ * Rotate a team's join code: mint a new one, point it at the team, and DELETE the
+ * old mapping so it stops working (revocation). Optional TTL auto-expires the new
+ * code. Returns the new code + its expiry (or null).
+ */
+export async function rotateJoinCode(
+  env: Env,
+  team: TeamMeta,
+  ttlSeconds?: number,
+): Promise<{ joinCode: string; expiresAt: string | null }> {
+  const code = joinCode();
+  const expiresAt = ttlSeconds ? new Date(Date.now() + ttlSeconds * 1000).toISOString() : null;
+  await env.AYO_KV.put(`joincode:${code}`, team.id, ttlSeconds ? { expirationTtl: ttlSeconds } : {});
+  await env.AYO_KV.delete(`joincode:${team.joinCode}`); // revoke the old code
+  const updated: TeamMeta = { ...team, joinCode: code, codeExpiresAt: expiresAt };
+  await env.AYO_KV.put(`team:${team.id}`, JSON.stringify(updated));
+  return { joinCode: code, expiresAt };
 }
 
 export async function getTeam(env: Env, id: TeamId): Promise<TeamMeta | null> {

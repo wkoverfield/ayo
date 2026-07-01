@@ -30,6 +30,7 @@ export type ApiErrorCode =
   | "unknown_recipient"
   | "bad_request"
   | "rate_limited"
+  | "team_full"
   | "payload_too_large"
   | "internal_error";
 
@@ -99,6 +100,21 @@ export interface InviteResponse {
   name: string;
   joinCode: string;
 }
+
+/** `POST /v1/teams/:id/rotate-code` — owner rotates the join code (revokes the old
+ *  one); optional expiry. Members cap is server-enforced (see MAX_TEAM_SIZE). */
+export interface RotateCodeRequest {
+  /** Optional: auto-expire the new code after N hours (omit = no expiry). */
+  expiresInHours?: number;
+}
+export interface RotateCodeResponse {
+  joinCode: string;
+  /** ISO timestamp, or null if the code doesn't expire. */
+  expiresAt: string | null;
+}
+
+/** Max members per team — a leaked, non-rotating code + no cap = a floodable team. */
+export const MAX_TEAM_SIZE = 50;
 
 export interface MembersResponse {
   members: MemberPresence[];

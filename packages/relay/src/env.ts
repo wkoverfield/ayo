@@ -30,6 +30,7 @@ const ERROR_STATUS: Record<ApiErrorCode, number> = {
   unknown_recipient: 400,
   bad_request: 400,
   rate_limited: 429,
+  team_full: 409,
   payload_too_large: 413,
   internal_error: 500,
 };

@@ -177,6 +177,28 @@ team
       fail(err);
     }
   });
+team
+  .command("rotate-code")
+  .description("Rotate your team's join code (revokes the old one) — creator only")
+  .option("--expires <hours>", "auto-expire the new code after N hours")
+  .action(async (opts) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team.");
+      const hrs = opts.expires ? Number(opts.expires) : undefined;
+      const res = await api.rotateCode(s, cfg.activeTeamId, hrs);
+      console.log(
+        pc.green("✓ new join code: ") +
+          pc.bold(pc.cyan(res.joinCode)) +
+          (res.expiresAt ? pc.dim(`  (expires ${new Date(res.expiresAt).toLocaleString()})`) : ""),
+      );
+      console.log(pc.dim("  the old code no longer works — share the new one with `ayo invite`."));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
 // `ayo team "we're cooked"` broadcasts to everyone — the default when the args
 // aren't `create`/`status`. (Commander routes unmatched args to isDefault.)
 team
