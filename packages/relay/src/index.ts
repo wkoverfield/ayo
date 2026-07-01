@@ -27,6 +27,7 @@ import type {
   WebhookInfo,
   WebhookPingRequest,
   SendAyoRequest,
+  Recipients,
   MeResponse,
   PublicUser,
 } from "@ayo-dev/core";
@@ -116,23 +117,51 @@ export default {
       // ── Inbound webhook (no session — "one curl → Ayo") ─────────────────
       const hookMatch = path.match(/^\/v1\/hooks\/([A-Za-z0-9_-]{16,64})$/);
       if (hookMatch && req.method === "POST") {
+        // Unauthenticated public write: throttle by IP FIRST, before we touch KV,
+        // so token-guessing can't amplify KV reads (each miss is a getWebhook).
+        if (await overRateLimit(env, `hook-probe:${clientIp(req)}`, 60, 60)) {
+          return apiError("rate_limited", "Too many webhook requests from this IP.");
+        }
         const token = hookMatch[1]!;
         const hook = await getWebhook(env, token);
         if (!hook) return apiError("not_found", "Unknown or revoked webhook.");
-        // The token is a public write credential — cap firing rate per hook.
-        if (await overRateLimit(env, `hook:${token}`, 30, 60)) {
-          return apiError("rate_limited", "This webhook is firing too fast — slow down.");
+        // A hook is the creator's capability. If they've left the team it dies —
+        // and firing it must NOT re-add them to the roster (sendAsMember would).
+        if (!(await getMembership(env, hook.teamId, hook.userId as never))) {
+          return apiError("not_found", "Unknown or revoked webhook.");
         }
         const input = (await req.json().catch(() => ({}))) as WebhookPingRequest;
         if (typeof input.text !== "string" || input.text.trim() === "") {
           return apiError("bad_request", "A webhook ping needs a non-empty `text`.");
         }
-        const to = input.to ?? (hook.to ? [hook.to] : ["*"]);
+        // Scope-lock: a hook pinned to a recipient can't be widened by the caller;
+        // only an unpinned (broadcast) hook honors a caller-supplied `to`.
+        let to: Recipients;
+        if (hook.to) {
+          to = [hook.to];
+        } else if (input.to !== undefined) {
+          if (!Array.isArray(input.to) || input.to.length === 0) {
+            return apiError("bad_request", '`to` must be a non-empty array of handles, e.g. ["wilson"] or ["*"].');
+          }
+          to = input.to;
+        } else {
+          to = ["*"];
+        }
+        // Public write credential — cap firing per hook, tighter for team-wide
+        // broadcasts (up to team-size fanout each).
+        const isBroadcast = to.includes("*");
+        if (await overRateLimit(env, `hook:${token}`, isBroadcast ? 6 : 30, 60)) {
+          return apiError("rate_limited", "This webhook is firing too fast — slow down.");
+        }
         // Suppression is first-class: inbound automation NEVER breaks through a
         // recipient's focus. Cap urgency at "normal" (urgent → normal).
         const urgency = input.urgency === "low" ? "low" : "normal";
-        const headline = typeof input.title === "string" && input.title.trim() ? `${input.title.trim()}\n\n` : "";
-        const body = `[${hook.label}] ${headline}${input.text.trim()}`.slice(0, 4096);
+        // Cap each field before composing so a huge title/text can't force a big
+        // intermediate allocation ahead of the final 4 KB clamp.
+        const title = typeof input.title === "string" ? input.title.trim().slice(0, 200) : "";
+        const headline = title ? `${title}\n\n` : "";
+        const text = input.text.trim().slice(0, 4096);
+        const body = `[${hook.label}] ${headline}${text}`.slice(0, 4096);
         const send: SendAyoRequest = { to, body, kind: "ping", urgency };
         return await sendAsMember(env, hook.teamId, hook.userId, hook.handle, send);
       }
@@ -329,20 +358,18 @@ export default {
       const hooksMatch = path.match(/^\/v1\/teams\/(team_[^/]+)\/hooks$/);
       if (hooksMatch) {
         const teamId = hooksMatch[1] as never;
-        if (!(await getMembership(env, teamId, userId))) {
-          return apiError("not_a_member", "You are not a member of this team.");
-        }
+        const membership = await getMembership(env, teamId, userId);
+        if (!membership) return apiError("not_a_member", "You are not a member of this team.");
         if (req.method === "POST") {
           const input = (await req.json().catch(() => ({}))) as CreateWebhookRequest;
           const label = typeof input.label === "string" ? input.label.trim() : "";
           if (!label || label.length > 40) {
             return apiError("bad_request", "A webhook needs a label of 1–40 characters.");
           }
-          const membership = await getMembership(env, teamId, userId);
           const meta = {
             teamId,
             userId: userId as never,
-            handle: membership!.handle,
+            handle: membership.handle,
             label,
             to: typeof input.to === "string" && input.to.trim() ? input.to.trim() : undefined,
             createdAt: new Date().toISOString(),
@@ -354,18 +381,25 @@ export default {
             label: meta.label,
             to: meta.to,
             createdAt: meta.createdAt,
+            createdBy: meta.handle,
           };
           return json(info, { status: 201 });
         }
         if (req.method === "GET") {
           const rows = await listWebhooks(env, teamId);
-          const hooks: WebhookInfo[] = rows.map((r) => ({
-            token: r.token,
-            url: `${url.origin}/v1/hooks/${r.token}`,
-            label: r.label,
-            to: r.to,
-            createdAt: r.createdAt,
-          }));
+          // A token is a bearer secret: only its creator gets the token/url back.
+          // Others see metadata only, so a member can't lift a teammate's URL.
+          const hooks: WebhookInfo[] = rows.map((r) => {
+            const owned = r.createdBy === membership.handle;
+            return {
+              token: owned ? r.token : "",
+              url: owned ? `${url.origin}/v1/hooks/${r.token}` : "",
+              label: r.label,
+              to: r.to,
+              createdAt: r.createdAt,
+              createdBy: r.createdBy,
+            };
+          });
           return json({ hooks } satisfies ListWebhooksResponse);
         }
       }

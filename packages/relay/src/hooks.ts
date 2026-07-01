@@ -24,20 +24,32 @@ export interface WebhookMeta {
   createdAt: string;
 }
 
-/** The listable view of a hook — never re-derives the URL here (the route does). */
-export interface WebhookRow {
+/** The listable view of a hook — never re-derives the URL here (the route does).
+ *  `createdBy` gates who may see the raw token (only the creator; see the list
+ *  route). Internal to this module — callers use core's WebhookInfo. */
+interface WebhookRow {
   token: string;
   label: string;
   to?: Handle;
   createdAt: string;
+  createdBy: Handle;
 }
 
 export async function createWebhook(env: Env, meta: WebhookMeta): Promise<string> {
   const token = urlSafeToken(16);
-  await env.AYO_KV.put(`hook:${token}`, JSON.stringify(meta));
-  // Reverse index for per-team listing (value carries the token so list is one pass).
-  const row: WebhookRow = { token, label: meta.label, to: meta.to, createdAt: meta.createdAt };
+  const row: WebhookRow = {
+    token,
+    label: meta.label,
+    to: meta.to,
+    createdAt: meta.createdAt,
+    createdBy: meta.handle,
+  };
+  // Write the reverse index FIRST: KV has no transactions, so if we crash between
+  // the two puts, a listable-but-not-yet-fireable hook (revocable, fires 404) is
+  // the safe failure — the reverse order would leave a LIVE, unlistable, hence
+  // unrevocable hook.
   await env.AYO_KV.put(`teamhook:${meta.teamId}:${token}`, JSON.stringify(row));
+  await env.AYO_KV.put(`hook:${token}`, JSON.stringify(meta));
   return token;
 }
 

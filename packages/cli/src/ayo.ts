@@ -331,7 +331,10 @@ hook
       const { hooks } = await api.listWebhooks(s, cfg.activeTeamId);
       if (!hooks.length) return console.log(pc.dim("No webhooks yet. `ayo hook create`."));
       for (const h of hooks) {
-        console.log(`  ${pc.bold(`[${h.label}]`)}${h.to ? ` → ${h.to}` : " → team"}   ${pc.dim(h.url)}`);
+        const scope = h.to ? ` → ${h.to}` : " → team";
+        // The relay only returns the URL for hooks YOU created (it's a secret).
+        const tail = h.url ? pc.dim(h.url) : pc.dim(`(created by ${h.createdBy ?? "?"} — URL hidden)`);
+        console.log(`  ${pc.bold(`[${h.label}]`)}${scope}   ${tail}`);
       }
     } catch (err) {
       fail(err);
@@ -345,7 +348,15 @@ hook
       const s = requireSession();
       const cfg = loadConfig();
       if (!cfg.activeTeamId) return console.log("No active team.");
-      const t = token.includes("/") ? token.split("/").filter(Boolean).pop()! : token;
+      // Accept a full URL (with any query/trailing slash) or a bare token.
+      let t = token;
+      if (token.includes("/")) {
+        try {
+          t = new URL(token).pathname.split("/").filter(Boolean).pop() ?? token;
+        } catch {
+          t = token.split("/").filter(Boolean).pop() ?? token;
+        }
+      }
       await api.revokeWebhook(s, cfg.activeTeamId, t);
       console.log(pc.green("✓ webhook revoked"));
     } catch (err) {

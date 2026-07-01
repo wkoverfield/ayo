@@ -190,15 +190,19 @@ export interface CreateWebhookRequest {
   to?: Handle;
 }
 
-/** A minted/listed webhook. `token` is a bearer secret — only ever returned to
- *  the authenticated owning team, never rendered on a public surface. */
+/** A minted/listed webhook. `token` is a bearer secret. On CREATE the creator
+ *  always gets it. On LIST, only the creator sees the token/url of their own
+ *  hooks — for others' hooks `token`/`url` are empty strings (metadata only), so
+ *  a member can't lift a teammate's URL and spoof pings as them. */
 export interface WebhookInfo {
   token: string;
-  /** The full curl-able URL: `<relay>/v1/hooks/<token>`. */
+  /** The full curl-able URL: `<relay>/v1/hooks/<token>` (empty if not yours). */
   url: string;
   label: string;
   to?: Handle;
   createdAt: string;
+  /** Handle of the member who created the hook (present on LIST). */
+  createdBy?: Handle;
 }
 
 export type CreateWebhookResponse = WebhookInfo;

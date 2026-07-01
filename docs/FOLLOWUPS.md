@@ -197,7 +197,9 @@ roster-registering it, tightly rate-limited by IP + per-token.
 team, attributed to the creating member with the hook's `[label]` prefixed.
 Suppression is first-class: it routes through the normal DO send, so
 heads-down/dnd recipients get `held`, and `urgency` is capped at `normal`
-(inbound automation never breaks focus). Per-token rate-limit 30/min.
+(inbound automation never breaks focus). Rate-limited per-token (30/min, 6/min
+for broadcasts) + per-IP; scope-locked (a pinned hook can't be widened to `*`);
+tokens are creator-only in `list`; fires only while the creator is still a member.
 
 Deferred:
 - **Synthetic bot identity.** Inbound pings show as *from the creator*, not a
@@ -206,8 +208,9 @@ Deferred:
 - **Urgent opt-in.** Urgent is coerced to normal. A hook created with an
   explicit `--allow-urgent` capability could break through for true alerts
   (prod down). Needs a per-hook capability flag + UI.
-- **Revoke on leave / team delete.** A hook outlives its creator leaving the
-  team (the Ayo would then be from a non-member). Revoke a member's hooks when
-  they leave, and a team's hooks on delete.
+- **Revoke on leave / team delete (KV cleanup).** Firing a hook now checks the
+  creator is still a member and 404s otherwise (no re-roster, no ping), so an
+  ex-member's hook is inert — but the KV rows linger and still show in `list`.
+  Proactively delete a member's hooks when they leave, and a team's on delete.
 - **Signed payloads.** For S4 (GitHub), verify the `X-Hub-Signature-256` HMAC
   rather than relying only on the secret token in the URL.
