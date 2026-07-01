@@ -491,9 +491,11 @@ export default {
         return json({ ok: true });
       }
 
-      // ── Flat ayo read/resolve -> resolve team, then forward ─────────────
-      const flatAyo = path.match(/^\/v1\/ayo\/(ayo_[^/]+)\/(read|resolve)$/);
-      if (flatAyo && req.method === "POST") {
+      // ── Flat ayo read/resolve/answer -> resolve team, then forward ──────
+      // read/resolve are POST; answer is POST (answer it) or GET (poll state —
+      // the asking agent short-polls until answered or its deadline passes).
+      const flatAyo = path.match(/^\/v1\/ayo\/(ayo_[^/]+)\/(read|resolve|answer)$/);
+      if (flatAyo && (req.method === "POST" || (req.method === "GET" && flatAyo[2] === "answer"))) {
         const ayoId = flatAyo[1]!;
         const teamId = await teamForAyo(env, ayoId as never);
         if (!teamId) return apiError("team_not_found", "Unknown ayo.");

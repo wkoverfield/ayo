@@ -12,6 +12,9 @@
 
 import type {
   AckFrame,
+  AnswerAskRequest,
+  AskAnswer,
+  AskStateResponse,
   Ayo,
   AyoSound,
   Delivery,
@@ -32,7 +35,7 @@ import type {
   TimelineResponse,
   UserId,
 } from "@ayo-dev/core";
-import { canAdvance, newAyoId, PROTOCOL_VERSION } from "@ayo-dev/core";
+import { canAdvance, newAyoId, MAX_ASK_OPTIONS, MAX_ASK_OPTION_LENGTH, PROTOCOL_VERSION } from "@ayo-dev/core";
 import { apiError, type Env } from "./env.js";
 
 /** Parse the `x-ayo-sound` header the Worker stamps from the sender's profile.
@@ -129,6 +132,11 @@ export class TeamHub implements DurableObject {
       if (req.method === "DELETE") return this.handleHackathonEnd();
     }
 
+    const answerMatch = path.match(/^\/internal\/ayo\/(ayo_[^/]+)\/answer$/);
+    if (answerMatch) {
+      if (req.method === "POST") return this.handleAnswer(req, answerMatch[1] as Ayo["id"], userId, handle);
+      if (req.method === "GET") return this.handleAskState(answerMatch[1] as Ayo["id"]);
+    }
     const stateMatch = path.match(/^\/internal\/ayo\/(ayo_[^/]+)\/(read|resolve)$/);
     if (stateMatch && req.method === "POST") {
       const next: DeliveryState = stateMatch[2] === "read" ? "read" : "resolved";
@@ -212,6 +220,17 @@ export class TeamHub implements DurableObject {
     if (input.context && JSON.stringify(input.context).length > 64 * 1024) {
       return apiError("payload_too_large", "Ayo context exceeds 64 KB.");
     }
+    const isAsk = input.kind === "ask";
+    if (isAsk && input.ask?.options) {
+      const opts = input.ask.options;
+      if (
+        !Array.isArray(opts) ||
+        opts.length > MAX_ASK_OPTIONS ||
+        opts.some((o) => typeof o !== "string" || o.length === 0 || o.length > MAX_ASK_OPTION_LENGTH)
+      ) {
+        return apiError("bad_request", `Ask options: up to ${MAX_ASK_OPTIONS} non-empty strings of ≤${MAX_ASK_OPTION_LENGTH} chars.`);
+      }
+    }
     const teamId = req.headers.get("x-ayo-team") as Ayo["teamId"];
     const ayo: Ayo = {
       id: newAyoId(),
@@ -223,6 +242,7 @@ export class TeamHub implements DurableObject {
       urgency: input.urgency ?? "normal",
       context: input.context,
       replyTo: input.replyTo ?? null,
+      ask: isAsk ? (input.ask ?? {}) : undefined,
       sound: parseSound(req.headers.get("x-ayo-sound")), // sender's signature sound, stamped by the Worker
       expiresAt: input.expiresAt ?? null,
       createdAt: new Date().toISOString(),
@@ -231,17 +251,22 @@ export class TeamHub implements DurableObject {
     // Index so the flat `POST /v1/ayo/:id/{read,resolve}` path can find the team.
     await this.env.AYO_KV.put(`ayoteam:${ayo.id}`, teamId, { expirationTtl: 60 * 60 * 24 * 30 });
 
-    const { recipients, unknownRecipients } = await this.resolveRecipients(input.to, userId);
+    // Asks may be self-addressed: the agent sends AS you (shared identity), but
+    // human-you is the recipient — the one case where sender === recipient is real.
+    const { recipients, unknownRecipients } = await this.resolveRecipients(input.to, userId, {
+      includeSelf: isAsk,
+    });
     const deliveredTo: Handle[] = [];
     const queuedFor: Handle[] = [];
     const heldFor: Handle[] = [];
-    // Urgent (🚨) breaks through focus; everything else respects it. `away` is
-    // deliberately NOT a focus-hold — it's just "stepped out", so it queues and
-    // buzzes on reconnect like any offline recipient.
-    const breakthrough = ayo.urgency === "urgent";
 
     for (const m of recipients) {
       const sockets = this.socketsForUser(m.userId);
+      // Urgent (🚨) breaks through focus, and so does an ask from YOUR OWN agent —
+      // suppression protects you from other people; your blocked agent IS your
+      // work. `away` is deliberately NOT a focus-hold — it's just "stepped out",
+      // so it queues and buzzes on reconnect like any offline recipient.
+      const breakthrough = ayo.urgency === "urgent" || (isAsk && m.userId === userId);
       const focusing = (m.status === "heads-down" || m.status === "dnd") && !breakthrough;
       if (sockets.length === 0) {
         // Offline → queue it; the daemon replays + buzzes on reconnect.
@@ -276,8 +301,11 @@ export class TeamHub implements DurableObject {
   private async resolveRecipients(
     to: Handle[],
     senderId: UserId,
+    opts: { includeSelf?: boolean } = {},
   ): Promise<{ recipients: Member[]; unknownRecipients: Handle[] }> {
     const members = await this.allMembers();
+    // `*` always excludes the sender — a broadcast to yourself is noise, even
+    // for asks (a self-ask must NAME you, which the MCP tool does).
     if (to.includes("*")) {
       return { recipients: members.filter((m) => m.userId !== senderId), unknownRecipients: [] };
     }
@@ -287,7 +315,9 @@ export class TeamHub implements DurableObject {
     const known = new Set(members.map((m) => m.handle.toLowerCase()));
     const want = new Set(to.map((h) => h.toLowerCase()));
     return {
-      recipients: members.filter((m) => want.has(m.handle.toLowerCase()) && m.userId !== senderId),
+      recipients: members.filter(
+        (m) => want.has(m.handle.toLowerCase()) && (opts.includeSelf || m.userId !== senderId),
+      ),
       // Dedupe so a repeated bad handle (MCP accepts arrays) warns once.
       unknownRecipients: [...new Set(to.filter((h) => !known.has(h.toLowerCase())))],
     };
@@ -303,14 +333,23 @@ export class TeamHub implements DurableObject {
     const ayos: Ayo[] = [];
     for (const ayo of all.values()) {
       // Your inbox is what was sent TO you, not what you sent (consistent with
-      // unreadFor / the unread count).
-      if (!this.addressedTo(ayo, handle) || ayo.from.id === userId) continue;
+      // unreadFor / the unread count). Exception: a self-addressed ASK — your
+      // agent sent it as you, but human-you is the recipient, so it stays.
+      const selfAsk = ayo.kind === "ask" && ayo.from.id === userId && this.addressedTo(ayo, handle);
+      if ((!this.addressedTo(ayo, handle) || ayo.from.id === userId) && !selfAsk) continue;
       if (since && ayo.id <= (since as Ayo["id"])) continue;
       if (unreadOnly) {
         const d = await this.getDelivery(ayo.id, userId);
         if (d && (d.state === "read" || d.state === "resolved")) continue;
       }
-      ayos.push(ayo);
+      if (ayo.kind === "ask") {
+        // Join the answer state so the CLI can pin unanswered asks without a
+        // second round-trip per item. null = still waiting.
+        const ans = await this.ctx.storage.get<AskAnswer>(`ans:${ayo.id}`);
+        ayos.push({ ...ayo, askAnswer: ans ?? null });
+      } else {
+        ayos.push(ayo);
+      }
     }
     ayos.sort((a, b) => (a.id < b.id ? -1 : 1));
     const cursor = ayos.length ? ayos[ayos.length - 1]!.id : null;
@@ -328,6 +367,46 @@ export class TeamHub implements DurableObject {
   ): Promise<Response> {
     await this.advance(ayoId as Ayo["id"], userId, handle, next);
     return Response.json({ ok: true });
+  }
+
+  /**
+   * Answer an ask. Honest semantics: first answer wins (a blocked agent must get
+   * exactly one verdict), an expired ask can't be answered (the agent already
+   * proceeded on its stated default), and only an addressee may answer.
+   */
+  private async handleAnswer(req: Request, ayoId: Ayo["id"], userId: UserId, handle: Handle): Promise<Response> {
+    const ayo = await this.ctx.storage.get<Ayo>(`msg:${ayoId}`);
+    if (!ayo) return apiError("not_found", "No such Ayo.");
+    if (ayo.kind !== "ask") return apiError("bad_request", "Only asks can be answered — use resolve for pings.");
+    if (!this.addressedTo(ayo, handle)) return apiError("forbidden", "This ask wasn't addressed to you.");
+    if (ayo.expiresAt && new Date(ayo.expiresAt).getTime() <= Date.now()) {
+      return apiError("bad_request", "This ask expired — the agent already proceeded without you.");
+    }
+    const existing = await this.ctx.storage.get<AskAnswer>(`ans:${ayoId}`);
+    if (existing) {
+      return apiError("bad_request", `Already answered by ${existing.by}: "${existing.answer}".`);
+    }
+    const input = (await req.json().catch(() => null)) as AnswerAskRequest | null;
+    const answer = typeof input?.answer === "string" ? input.answer.trim() : "";
+    if (!answer || answer.length > 4096) {
+      return apiError("bad_request", "An answer needs 1–4096 characters.");
+    }
+    const ans: AskAnswer = { answer, by: handle, at: new Date().toISOString() };
+    await this.ctx.storage.put(`ans:${ayoId}`, ans);
+    // Answering closes the loop for the answerer (mirrors resolve).
+    await this.advance(ayoId, userId, handle, "resolved");
+    return Response.json({ ok: true });
+  }
+
+  /** Poll an ask's state — the asking agent short-polls this until answered. */
+  private async handleAskState(ayoId: Ayo["id"]): Promise<Response> {
+    const ayo = await this.ctx.storage.get<Ayo>(`msg:${ayoId}`);
+    if (!ayo) return apiError("not_found", "No such Ayo.");
+    if (ayo.kind !== "ask") return apiError("bad_request", "Not an ask.");
+    const ans = await this.ctx.storage.get<AskAnswer>(`ans:${ayoId}`);
+    const expired = !ans && !!ayo.expiresAt && new Date(ayo.expiresAt).getTime() <= Date.now();
+    const body: AskStateResponse = { answered: !!ans, answer: ans ?? undefined, expired };
+    return Response.json(body);
   }
 
   /** Advance a recipient's delivery state and notify the sender if relevant. */

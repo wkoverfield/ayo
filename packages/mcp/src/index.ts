@@ -115,7 +115,9 @@ server.tool(
   "When the human needs to hand work to a teammate, use this — it packages the " +
     "branch, changed files, diff stat, and the blocker into one Ayo, and returns a " +
     "shareable link that renders the context for someone not yet on Ayo (so it " +
-    "works even if the teammate isn't set up). Set withDiff to include the full " +
+    "works even if the teammate isn't set up). Return the link to the human — and " +
+    "if they ask you to deliver it, use YOUR OWN tools (gh pr comment, Slack MCP, " +
+    "etc.); Ayo mints the artifact, you carry it. Set withDiff to include the full " +
     "diff — it covers all uncommitted changes (staged AND unstaged) and may " +
     "contain secrets, so it is OFF by default; only enable it when the human " +
     "intends to share code.",
@@ -153,6 +155,62 @@ server.tool(
       }
     }
     return text(out);
+  },
+);
+
+// ── request_approval (the ask: block until the human answers) ────────────────
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+server.tool(
+  "request_approval",
+  "Ask your human a blocking question and WAIT for their answer — use before " +
+    "irreversible or judgment calls (deploy, spend, delete, send, pick between " +
+    "approaches). The ask lands in their Ayo inbox/toast wherever they are (it " +
+    "reaches them even heads-down — it's their own work) and this call blocks " +
+    "until they answer or the timeout passes. On timeout you get timedOut:true — " +
+    "proceed with your best judgment AND tell the human what you chose (send_ayo).",
+  {
+    question: z.string().min(1).max(4096).describe("The decision you need, phrased so a one-word answer works."),
+    options: z
+      .array(z.string().min(1).max(80))
+      .max(8)
+      .optional()
+      .describe("Suggested answers (rendered as ready-made commands). Free text is always allowed too."),
+    note: z.string().optional().describe("Short context: what you tried, tradeoffs, your recommendation."),
+    timeoutMinutes: z.number().min(1).max(240).optional().describe("How long to wait (default 30)."),
+  },
+  async ({ question, options, note, timeoutMinutes }) => {
+    const auth = loadAuth();
+    const minutes = timeoutMinutes ?? 30;
+    const deadline = Date.now() + minutes * 60_000;
+    const ctx = withNote(captureContext(), note);
+    const res = await relay.send(auth, {
+      to: [auth.handle], // self-addressed: your agent asks YOU
+      body: question,
+      kind: "ask",
+      ask: { options },
+      context: ctx,
+      expiresAt: new Date(deadline).toISOString(),
+    });
+    // Short-poll until answered or the deadline. 3s keeps the human wait snappy
+    // without hammering the relay (~20 req/min while blocked).
+    while (Date.now() < deadline) {
+      await sleep(3000);
+      try {
+        const state = await relay.askState(auth, res.id);
+        if (state.answered && state.answer) {
+          return text(
+            `Answered by ${state.answer.by}: "${state.answer.answer}" (after ${Math.round((Date.now() - (deadline - minutes * 60_000)) / 60_000)}m). Proceed accordingly.`,
+          );
+        }
+        if (state.expired) break;
+      } catch {
+        /* transient poll failure — keep waiting until the deadline */
+      }
+    }
+    return text(
+      `timedOut:true — no answer after ${minutes}m. Proceed with your best judgment, state your choice clearly, and send_ayo the human a note about what you decided and why.`,
+    );
   },
 );
 
