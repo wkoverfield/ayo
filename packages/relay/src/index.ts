@@ -16,10 +16,12 @@ import type {
   JoinTeamRequest,
   JoinTeamResponse,
   InviteResponse,
+  RotateCodeRequest,
+  RotateCodeResponse,
   MeResponse,
   PublicUser,
 } from "@ayo-dev/core";
-import { newUserId, SOUND_PRESETS } from "@ayo-dev/core";
+import { newUserId, SOUND_PRESETS, MAX_TEAM_SIZE } from "@ayo-dev/core";
 import { apiError, json, type Env } from "./env.js";
 import { overRateLimit, clientIp } from "./rate-limit.js";
 import {
@@ -33,9 +35,11 @@ import { githubDeviceStart, githubDevicePoll, githubGetUser } from "./github.js"
 import { validateWav } from "./sounds.js";
 import {
   addMember,
+  countMembers,
   createTeam,
   getMembership,
   getTeam,
+  rotateJoinCode,
   teamByJoinCode,
   teamForAyo,
   teamsForUser,
@@ -129,7 +133,7 @@ export default {
         }
         const user = await loadUser(env, userId);
         if (!user) return apiError("invalid_token", "Session user not found.");
-        const team = await createTeam(env, name);
+        const team = await createTeam(env, name, userId);
         await addMember(env, { teamId: team.id, userId, handle: user.handle });
         // Best-effort, off the response path: seed the DO roster so the creator
         // shows on the board immediately (self-heals on first interaction anyway).
@@ -139,6 +143,11 @@ export default {
       }
 
       if (path === "/v1/teams/join" && req.method === "POST") {
+        // The only otherwise-unthrottled write path — cap join attempts per user
+        // so a valid session can't be used to brute-force codes or churn the DO.
+        if (await overRateLimit(env, `join:${userId}`, 20, 60)) {
+          return apiError("rate_limited", "Too many join attempts — give it a moment.");
+        }
         const { code } = (await req.json()) as JoinTeamRequest;
         const team = await teamByJoinCode(env, code);
         if (!team) return apiError("team_not_found", "No team with that join code.");
@@ -147,11 +156,39 @@ export default {
         // Idempotent: a repeat join (same valid code) is a no-op, so it can't be
         // used to hammer the team DO with register calls.
         if (!(await getMembership(env, team.id, userId))) {
+          // Size cap: a leaked/permanent code can't be used to flood a team.
+          if ((await countMembers(env, team.id)) >= MAX_TEAM_SIZE) {
+            return apiError("team_full", `This team is full (max ${MAX_TEAM_SIZE}).`);
+          }
           await addMember(env, { teamId: team.id, userId, handle: user.handle });
           ctx.waitUntil(registerInRoster(env, team.id, userId, user.handle));
         }
         const body: JoinTeamResponse = { id: team.id, name: team.name, joinCode: team.joinCode };
         return json(body);
+      }
+
+      // ── Rotate join code (owner only) — revokes the old code ────────────
+      const rotateMatch = path.match(/^\/v1\/teams\/(team_[^/]+)\/rotate-code$/);
+      if (rotateMatch && req.method === "POST") {
+        const teamId = rotateMatch[1] as never;
+        const team = await getTeam(env, teamId);
+        if (!team) return apiError("team_not_found", "No team with that id.");
+        if (!(await getMembership(env, teamId, userId))) {
+          return apiError("not_a_member", "You are not a member of this team.");
+        }
+        // Owner-gated. Legacy teams (no ownerId) fall back to any-member so they
+        // aren't permanently un-rotatable.
+        // TODO: backfill ownerId on legacy teams, then retire the any-member fallback.
+        if (team.ownerId && team.ownerId !== userId) {
+          return apiError("forbidden", "Only the team's creator can rotate the join code.");
+        }
+        const input = (await req.json().catch(() => ({}))) as RotateCodeRequest;
+        const hrs = Number(input.expiresInHours);
+        // KV rejects an expirationTtl under 60s (→ 500), so clamp the floor. A tiny
+        // `--expires` (e.g. 0.01h) becomes a 60s code rather than an error.
+        const ttl = Number.isFinite(hrs) && hrs > 0 ? Math.max(Math.round(hrs * 3600), 60) : undefined;
+        const { joinCode, expiresAt } = await rotateJoinCode(env, team, ttl);
+        return json({ joinCode, expiresAt } satisfies RotateCodeResponse);
       }
 
       // ── Invite: the active team's shareable join code (members only) ────
@@ -163,7 +200,11 @@ export default {
         if (!(await getMembership(env, teamId, userId))) {
           return apiError("not_a_member", "You are not a member of this team.");
         }
-        const body: InviteResponse = { name: team.name, joinCode: team.joinCode };
+        const body: InviteResponse = {
+          name: team.name,
+          joinCode: team.joinCode,
+          codeExpiresAt: team.codeExpiresAt ?? null,
+        };
         return json(body);
       }
 

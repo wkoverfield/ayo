@@ -27,9 +27,11 @@ export type ApiErrorCode =
   | "team_not_found"
   | "not_found"
   | "not_a_member"
+  | "forbidden"
   | "unknown_recipient"
   | "bad_request"
   | "rate_limited"
+  | "team_full"
   | "payload_too_large"
   | "internal_error";
 
@@ -98,7 +100,26 @@ export interface JoinTeamResponse {
 export interface InviteResponse {
   name: string;
   joinCode: string;
+  /** ISO timestamp the code expires, or null if it never does. Lets `ayo invite`
+   *  warn instead of pasting a dead code. Optional for backward-compat with an
+   *  older relay that doesn't send it. */
+  codeExpiresAt?: string | null;
 }
+
+/** `POST /v1/teams/:id/rotate-code` — owner rotates the join code (revokes the old
+ *  one); optional expiry. Members cap is server-enforced (see MAX_TEAM_SIZE). */
+export interface RotateCodeRequest {
+  /** Optional: auto-expire the new code after N hours (omit = no expiry). */
+  expiresInHours?: number;
+}
+export interface RotateCodeResponse {
+  joinCode: string;
+  /** ISO timestamp, or null if the code doesn't expire. */
+  expiresAt: string | null;
+}
+
+/** Max members per team — a leaked, non-rotating code + no cap = a floodable team. */
+export const MAX_TEAM_SIZE = 50;
 
 export interface MembersResponse {
   members: MemberPresence[];

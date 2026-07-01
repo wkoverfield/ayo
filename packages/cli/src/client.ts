@@ -14,6 +14,7 @@ import type {
   TimelineResponse,
   JoinTeamResponse,
   InviteResponse,
+  RotateCodeResponse,
   MembersResponse,
   MeResponse,
   SendAyoRequest,
@@ -71,6 +72,13 @@ export const api = {
 
   invite: (s: Session, teamId: string) =>
     call<InviteResponse>(`/v1/teams/${teamId}/invite`, { token: s.token }),
+
+  rotateCode: (s: Session, teamId: string, expiresInHours?: number) =>
+    call<RotateCodeResponse>(`/v1/teams/${teamId}/rotate-code`, {
+      method: "POST",
+      body: { expiresInHours },
+      token: s.token,
+    }),
 
   feed: (s: Session, teamId: string, limit = 30) =>
     call<FeedResponse>(`/v1/teams/${teamId}/feed?limit=${limit}`, { token: s.token }),

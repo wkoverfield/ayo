@@ -27,9 +27,11 @@ const ERROR_STATUS: Record<ApiErrorCode, number> = {
   team_not_found: 404,
   not_found: 404,
   not_a_member: 403,
+  forbidden: 403,
   unknown_recipient: 400,
   bad_request: 400,
   rate_limited: 429,
+  team_full: 409,
   payload_too_large: 413,
   internal_error: 500,
 };
