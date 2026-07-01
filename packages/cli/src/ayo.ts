@@ -193,7 +193,7 @@ team
           pc.bold(pc.cyan(res.joinCode)) +
           (res.expiresAt ? pc.dim(`  (expires ${new Date(res.expiresAt).toLocaleString()})`) : ""),
       );
-      console.log(pc.dim("  the old code no longer works — share the new one with `ayo invite`."));
+      console.log(pc.dim("  the old code stops working within ~a minute — share the new one with `ayo invite`."));
     } catch (err) {
       fail(err);
     }
@@ -264,16 +264,27 @@ program
       const s = requireSession();
       const cfg = loadConfig();
       if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
-      const { name, joinCode } = await api.invite(s, cfg.activeTeamId);
+      const { name, joinCode, codeExpiresAt } = await api.invite(s, cfg.activeTeamId);
+      // Don't hand out a dead code: if it's already expired, tell the inviter to
+      // rotate instead of pasting an invitation nobody can redeem.
+      if (codeExpiresAt && new Date(codeExpiresAt).getTime() < Date.now()) {
+        console.log(pc.yellow("⚠ your join code has expired — nobody can use it."));
+        console.log(pc.dim("  run  ayo team rotate-code  to mint a fresh one, then `ayo invite` again."));
+        return;
+      }
       console.log(pc.dim("\n  Send this to a teammate:\n  ───────────────────────"));
       console.log(`  ${pc.bold(s.handle)} invited you to ${pc.bold(`"${name}"`)} on Ayo — attention pings`);
       console.log("  from inside your terminal/agent (Codex, Claude, Cursor). No Slack.");
       console.log();
       console.log("    npm install -g @ayo-dev/cli");
       console.log(`    ayo join ${pc.bold(joinCode ?? "")}`);
+      if (codeExpiresAt) {
+        console.log(pc.dim(`    (code expires ${new Date(codeExpiresAt).toLocaleString()})`));
+      }
       console.log();
       console.log("  What's Ayo? github.com/wkoverfield/ayo");
       console.log(pc.dim("  ───────────────────────"));
+      console.log(pc.dim("  rotate anytime with  ayo team rotate-code  (revokes the old code)."));
     } catch (err) {
       fail(err);
     }

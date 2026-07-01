@@ -35,9 +35,21 @@ function joinCode(): string {
   return s;
 }
 
+/**
+ * Mint a join code that isn't already mapped to a team. The 30^6 space makes
+ * collisions astronomically unlikely, but a collision would silently hijack an
+ * existing team's code, so we get-before-put and retry once. One retry is plenty
+ * given the odds; we accept the (vanishing) residual risk rather than loop.
+ */
+async function freshJoinCode(env: Env): Promise<string> {
+  const first = joinCode();
+  if ((await env.AYO_KV.get(`joincode:${first}`)) === null) return first;
+  return joinCode();
+}
+
 export async function createTeam(env: Env, name: string, ownerId?: UserId): Promise<TeamMeta> {
   const id = newTeamId();
-  const code = joinCode();
+  const code = await freshJoinCode(env);
   const meta: TeamMeta = { id, name, joinCode: code, ownerId, codeExpiresAt: null };
   await env.AYO_KV.put(`team:${id}`, JSON.stringify(meta));
   await env.AYO_KV.put(`joincode:${code}`, id);
@@ -61,7 +73,7 @@ export async function rotateJoinCode(
   team: TeamMeta,
   ttlSeconds?: number,
 ): Promise<{ joinCode: string; expiresAt: string | null }> {
-  const code = joinCode();
+  const code = await freshJoinCode(env);
   const expiresAt = ttlSeconds ? new Date(Date.now() + ttlSeconds * 1000).toISOString() : null;
   await env.AYO_KV.put(`joincode:${code}`, team.id, ttlSeconds ? { expirationTtl: ttlSeconds } : {});
   await env.AYO_KV.delete(`joincode:${team.joinCode}`); // revoke the old code

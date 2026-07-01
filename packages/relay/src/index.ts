@@ -143,6 +143,11 @@ export default {
       }
 
       if (path === "/v1/teams/join" && req.method === "POST") {
+        // The only otherwise-unthrottled write path — cap join attempts per user
+        // so a valid session can't be used to brute-force codes or churn the DO.
+        if (await overRateLimit(env, `join:${userId}`, 20, 60)) {
+          return apiError("rate_limited", "Too many join attempts — give it a moment.");
+        }
         const { code } = (await req.json()) as JoinTeamRequest;
         const team = await teamByJoinCode(env, code);
         if (!team) return apiError("team_not_found", "No team with that join code.");
@@ -173,12 +178,15 @@ export default {
         }
         // Owner-gated. Legacy teams (no ownerId) fall back to any-member so they
         // aren't permanently un-rotatable.
+        // TODO: backfill ownerId on legacy teams, then retire the any-member fallback.
         if (team.ownerId && team.ownerId !== userId) {
-          return apiError("not_a_member", "Only the team's creator can rotate the join code.");
+          return apiError("forbidden", "Only the team's creator can rotate the join code.");
         }
         const input = (await req.json().catch(() => ({}))) as RotateCodeRequest;
         const hrs = Number(input.expiresInHours);
-        const ttl = Number.isFinite(hrs) && hrs > 0 ? Math.round(hrs * 3600) : undefined;
+        // KV rejects an expirationTtl under 60s (→ 500), so clamp the floor. A tiny
+        // `--expires` (e.g. 0.01h) becomes a 60s code rather than an error.
+        const ttl = Number.isFinite(hrs) && hrs > 0 ? Math.max(Math.round(hrs * 3600), 60) : undefined;
         const { joinCode, expiresAt } = await rotateJoinCode(env, team, ttl);
         return json({ joinCode, expiresAt } satisfies RotateCodeResponse);
       }
@@ -192,7 +200,11 @@ export default {
         if (!(await getMembership(env, teamId, userId))) {
           return apiError("not_a_member", "You are not a member of this team.");
         }
-        const body: InviteResponse = { name: team.name, joinCode: team.joinCode };
+        const body: InviteResponse = {
+          name: team.name,
+          joinCode: team.joinCode,
+          codeExpiresAt: team.codeExpiresAt ?? null,
+        };
         return json(body);
       }
 

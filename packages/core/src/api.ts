@@ -27,6 +27,7 @@ export type ApiErrorCode =
   | "team_not_found"
   | "not_found"
   | "not_a_member"
+  | "forbidden"
   | "unknown_recipient"
   | "bad_request"
   | "rate_limited"
@@ -99,6 +100,10 @@ export interface JoinTeamResponse {
 export interface InviteResponse {
   name: string;
   joinCode: string;
+  /** ISO timestamp the code expires, or null if it never does. Lets `ayo invite`
+   *  warn instead of pasting a dead code. Optional for backward-compat with an
+   *  older relay that doesn't send it. */
+  codeExpiresAt?: string | null;
 }
 
 /** `POST /v1/teams/:id/rotate-code` — owner rotates the join code (revokes the old
