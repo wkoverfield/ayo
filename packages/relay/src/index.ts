@@ -110,7 +110,7 @@ export default {
             // rendering arbitrary content). Styles inline + Google Fonts CSS; font
             // files from gstatic; images only the embedded data-URI logo. Unframeable.
             "content-security-policy":
-              "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; base-uri 'none'; frame-ancestors 'none'",
+              "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
             "x-content-type-options": "nosniff",
             "referrer-policy": "no-referrer",
           },

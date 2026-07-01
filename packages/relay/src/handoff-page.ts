@@ -60,7 +60,7 @@ const FONTS =
 
 const STYLE = `
 *{box-sizing:border-box;margin:0}
-:root{--paper:#F4EDE1;--card:#FDFBF7;--ink:#2A2E45;--ink2:#585C70;--muted:#847F73;--coral:#E15C3D;--coral-bg:#F9E6DD;--sage:#3E9A6E;--sage-strong:#256B48;--sage-bg:#EAF3EC;--border:#E7DCC9;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace}
+:root{--paper:#F4EDE1;--card:#FDFBF7;--ink:#2A2E45;--ink2:#585C70;--muted:#6B6660;--coral:#E15C3D;--coral-bg:#F9E6DD;--sage:#3E9A6E;--sage-strong:#256B48;--sage-bg:#EAF3EC;--border:#E7DCC9;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace}
 body{background:var(--paper);color:var(--ink);font-family:'Sora',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;line-height:1.6;padding:34px 22px 30px}
 .wrap{max-width:596px;margin:0 auto}
 .rise{opacity:0;transform:translateY(7px);animation:rise .5s cubic-bezier(.2,.7,.2,1) forwards}
@@ -82,22 +82,23 @@ h1{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:26px;l
 .note{white-space:pre-wrap;font-size:14.5px;color:#33374B;line-height:1.62}
 .meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 code{font-family:var(--mono)}
-.chip{font-family:var(--mono);font-size:12.5px;padding:5px 10px;border-radius:8px;background:var(--coral-bg);color:#A63A1B;font-weight:500}
+.chip{font-family:var(--mono);font-size:12.5px;padding:5px 10px;border-radius:8px;background:var(--coral-bg);color:#A63A1B;font-weight:500;max-width:100%;word-break:break-all}
 .pill{font-family:var(--mono);font-size:12px;padding:5px 9px;border-radius:8px;background:#FBF6EC;border:1px solid var(--border);color:var(--ink2)}
 .files{list-style:none;margin:13px 0 0;padding:0}
 .files li{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12.5px;color:#3B3F52;padding:5px 0;border-top:1px solid #F0E8D9}
 .files li:first-child{border-top:0}
+.files li span{min-width:0;word-break:break-all}
 .files li::before{content:"";width:6px;height:6px;border-radius:2px;background:var(--sage);flex:0 0 auto;opacity:.75}
-.diff{margin:0;border-radius:10px;overflow:hidden;border:1px solid #EADFCB}
-.diff .row{font-family:var(--mono);font-size:12px;line-height:1.75;padding:0 13px;white-space:pre;overflow-x:auto;color:#494D5F;background:#FCF8F0}
+.diff{margin:0;border-radius:10px;overflow-x:auto;overflow-y:hidden;border:1px solid #EADFCB}
+.diff .row{font-family:var(--mono);font-size:12px;line-height:1.75;padding:0 13px;white-space:pre;color:#494D5F;background:#FCF8F0}
 .diff .add{background:#E7F1E9;color:#1F5E40}
 .diff .del{background:#FAE7E0;color:#A23A1E}
-.diff .hunk{background:#F1E9DB;color:#8A7F69}
+.diff .hunk{background:#F1E9DB;color:#5C5445}
 .cta{background:var(--sage-bg);border:1px solid #CDE3D5;border-radius:15px;padding:20px;margin:22px 0 8px}
 .cta .lbl{color:var(--sage-strong)}
 .cta-h{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:18px;color:var(--ink);margin-bottom:13px;letter-spacing:-.01em}
 .step{display:flex;gap:12px;margin-top:13px}
-.num{width:22px;height:22px;border-radius:50%;background:var(--sage);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:0 0 auto;margin-top:2px}
+.num{width:22px;height:22px;border-radius:50%;background:var(--sage-strong);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:0 0 auto;margin-top:2px}
 .step .body{flex:1;min-width:0}
 .step .t{font-size:13.5px;color:var(--ink);font-weight:500;margin-bottom:6px}
 .term{font-family:var(--mono);font-size:13px;background:var(--ink);color:#F4EDE1;border-radius:9px;padding:10px 13px;overflow-x:auto;display:flex;align-items:center;gap:8px}
@@ -113,8 +114,8 @@ code{font-family:var(--mono)}
 :root{--paper:#1C1B1E;--card:#242327;--ink:#F1E9DC;--ink2:#BCB6A8;--muted:#8B8577;--coral:#F0795A;--coral-bg:#3A2620;--sage:#66C296;--sage-strong:#93DDB7;--sage-bg:#1F2C26;--border:#33313A}
 .note{color:#DBD4C6}.chip{background:#3A2620;color:#F6A98E}.pill{background:#242327;color:#BCB6A8}
 .expiry{background:#242327}.files li{color:#CFC8BA;border-top-color:#33313A}
-.diff{border-color:#33313A}.diff .row{background:#201F23;color:#BCB6A8}.diff .add{background:#1F2C26;color:#84D3A8}.diff .del{background:#331F1B;color:#F09C7E}.diff .hunk{background:#2A2830;color:#8B8577}
-.cta{background:#1F2C26;border-color:#2E5040}.num{color:#12241B}
+.diff{border-color:#33313A}.diff .row{background:#201F23;color:#BCB6A8}.diff .add{background:#1F2C26;color:#84D3A8}.diff .del{background:#331F1B;color:#F09C7E}.diff .hunk{background:#2A2830;color:#A89F8F}
+.cta{background:#1F2C26;border-color:#2E5040}.num{background:var(--sage);color:#12241B}
 .term{background:#100F12}
 }
 `;
@@ -152,7 +153,7 @@ export function renderHandoffPage(share: HandoffShare): string {
     if (ctx.commit) bits.push(`<span class="pill">commit ${escapeHtml(ctx.commit)}</span>`);
     if (ctx.diffStat) bits.push(`<span class="pill">${escapeHtml(ctx.diffStat)}</span>`);
     const files = ctx.changedFiles?.length
-      ? `<ul class="files">${ctx.changedFiles.map((f) => `<li>${escapeHtml(f)}</li>`).join("")}</ul>`
+      ? `<ul class="files">${ctx.changedFiles.map((f) => `<li><span>${escapeHtml(f)}</span></li>`).join("")}</ul>`
       : "";
     contextCard = `<div class="card rise"><div class="lbl">Work context</div><div class="meta">${bits.join("")}</div>${files}</div>`;
   }
@@ -185,7 +186,7 @@ export function renderHandoffPage(share: HandoffShare): string {
 
   const body = `
     ${HEADER}
-    <div class="eyebrow rise"><div class="avatar">${escapeHtml(initials(name))}</div><div class="who"><b>${from}</b> <span class="h">@${handle}</span> handed off work to you<br>on <b>${team}</b></div></div>
+    <div class="eyebrow rise"><div class="avatar" aria-hidden="true">${escapeHtml(initials(name))}</div><div class="who"><b>${from}</b> <span class="h">@${handle}</span> handed off work to you<br>on <b>${team}</b></div></div>
     <h1 class="rise">${escapeHtml(share.blocker)}</h1>
     <div class="rise"><span class="expiry">${escapeHtml(timeLeft(share.expiresAt))}</span></div>
     ${noteCard}
