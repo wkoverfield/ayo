@@ -607,6 +607,7 @@ program
   .option("--with-diff", "attach the full git diff (may contain uncommitted secrets)", false)
   .option("--urgent", "mark urgent", false)
   .option("--no-link", "don't also mint a shareable web link for the handoff")
+  .option("--no-code", "mint the link but don't embed the team join code (share context without granting join access)")
   .option("--expires <hours>", "when the share link expires (default 7 days)")
   .action(async (target: string, message: string[], opts) => {
     try {
@@ -642,9 +643,15 @@ program
             blocker: body,
             context: ctx,
             expiresInHours: Number.isFinite(hrs) ? hrs : undefined,
+            // Commander: `--no-code` sets opts.code=false. Default (undefined/true)
+            // lets the relay embed the code; false explicitly omits it.
+            includeJoinCode: opts.code === false ? false : undefined,
           });
           console.log(pc.green("  🔗 share link: ") + pc.cyan(link.url));
-          console.log(pc.dim("     works for anyone, even before they're on Ayo — expires automatically."));
+          const reach = opts.code === false
+            ? "shows your context to anyone — no join code embedded."
+            : "works for anyone, even before they're on Ayo — expires automatically.";
+          console.log(pc.dim(`     ${reach}`));
         } catch (err) {
           console.log(pc.dim(`  (couldn't mint a share link: ${err instanceof Error ? err.message : "unknown"})`));
         }

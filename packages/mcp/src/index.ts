@@ -126,17 +126,24 @@ server.tool(
       .boolean()
       .optional()
       .describe("Also mint a shareable web link that works for people not yet on Ayo (default true)."),
+    includeJoinCode: z
+      .boolean()
+      .optional()
+      .describe("Embed the team join code in the link so a non-user installs → joins in one step (default true). Set false to share context without granting join access."),
   },
-  async ({ to, blocker, note, withDiff, urgent, link }) => {
+  async ({ to, blocker, note, withDiff, urgent, link, includeJoinCode }) => {
     const auth = loadAuth();
-    const ctx = withNote(captureContext({ withDiff: withDiff ?? false }), note);
+    // rawCtx feeds the link untouched; the send gets the note folded in. Passing
+    // rawCtx (not ctx) to the link avoids storing the note twice in the snapshot.
+    const rawCtx = captureContext({ withDiff: withDiff ?? false });
+    const ctx = withNote(rawCtx, note);
     const res = await relay.send(auth, { to, body: blocker, kind: "handoff", urgency: urgent ? "urgent" : "normal", context: ctx });
     let out = `Handoff — ${sentSummary(res, ctx)}`;
     // The Loom mechanic: a public link a non-user can open. Best-effort — the
     // handoff already sent, so a link failure must not fail the tool call.
     if (link !== false) {
       try {
-        const l = await relay.createHandoffLink(auth, { blocker, note, context: ctx });
+        const l = await relay.createHandoffLink(auth, { blocker, note, context: rawCtx, includeJoinCode });
         out += `\nShare link (works before they're on Ayo): ${l.url}`;
       } catch (err) {
         out += `\n(couldn't mint a share link: ${err instanceof Error ? err.message : "unknown"})`;

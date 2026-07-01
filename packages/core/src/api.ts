@@ -168,6 +168,10 @@ export interface HandoffShare {
   context?: AyoContext;
   /** Present iff the sender opted to embed it — enables the 1-step join CTA. */
   joinCode?: string;
+  /** The embedded join code's own expiry (codes rotate/expire independently of
+   *  the link) — lets the page flag a stale code instead of a dead command.
+   *  null = the code doesn't expire; absent = no code embedded. */
+  joinCodeExpiresAt?: string | null;
   createdAt: string;
   expiresAt: string;
 }

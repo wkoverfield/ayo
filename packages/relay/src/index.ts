@@ -93,7 +93,9 @@ export default {
           status: share ? 200 : 404,
           headers: {
             "content-type": "text/html; charset=utf-8",
-            "cache-control": share ? "public, max-age=60" : "no-store",
+            // `private` so no shared/CDN cache can serve a link past its KV expiry
+            // (min TTL is 60s); each token is unique so shared caching buys nothing.
+            "cache-control": share ? "private, max-age=30" : "no-store",
             // Strict CSP: no scripts, inline styles only, unframeable. Defense in
             // depth atop escapeHtml on a public page rendering arbitrary content.
             "content-security-policy":
@@ -266,15 +268,21 @@ export default {
           Number.isFinite(hrs) && hrs > 0 ? Math.min(hrs, HANDOFF_LINK_MAX_TTL_HOURS) : HANDOFF_LINK_TTL_HOURS;
         const ttl = Math.max(Math.round(wantHrs * 3600), 60);
         const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+        const embedCode = input.includeJoinCode !== false;
+        // Strip cwd: it's an absolute local path (username, filesystem layout) that
+        // the public page never renders — keep it off the public artifact entirely.
+        const context = input.context ? { ...input.context, cwd: undefined } : undefined;
         const share: HandoffShare = {
           v: 1,
           from: { handle: membership.handle, name: user.name },
           teamName: team.name,
           blocker: input.blocker,
           note: input.note,
-          context: input.context,
+          context,
           // Default: embed the join code (frictionless conversion). Opt out per-link.
-          joinCode: input.includeJoinCode === false ? undefined : team.joinCode,
+          joinCode: embedCode ? team.joinCode : undefined,
+          // Snapshot the code's own expiry so the page can flag a stale code.
+          joinCodeExpiresAt: embedCode ? team.codeExpiresAt ?? null : undefined,
           createdAt: new Date().toISOString(),
           expiresAt,
         };

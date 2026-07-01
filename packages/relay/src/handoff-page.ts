@@ -93,9 +93,21 @@ export function renderHandoffPage(share: HandoffShare): string {
 
   // Conversion CTA. If the sender embedded a join code, it's a two-command path;
   // otherwise we tell the viewer to ask the sender for one (never invent a code).
-  const joinStep = share.joinCode
-    ? `<div class="step">Then join ${from}'s team:<code>ayo join ${escapeHtml(share.joinCode)}</code></div>`
-    : `<div class="step expiry">Then ask ${from} for a join code and run <code>ayo join &lt;code&gt;</code>.</div>`;
+  // A code can rotate/expire independently of the link, so flag a stale one rather
+  // than hand out a dead command.
+  let joinStep: string;
+  if (share.joinCode) {
+    const exp = share.joinCodeExpiresAt;
+    const codeExpired = exp != null && new Date(exp).getTime() <= Date.now();
+    if (codeExpired) {
+      joinStep = `<div class="step expiry">The join code in this handoff has expired — ask ${from} for a fresh <code>ayo invite</code>.</div>`;
+    } else {
+      const hint = exp ? ` <span class="expiry">(code ${escapeHtml(timeLeft(exp))})</span>` : "";
+      joinStep = `<div class="step">Then join ${from}'s team:<code>ayo join ${escapeHtml(share.joinCode)}</code>${hint}</div>`;
+    }
+  } else {
+    joinStep = `<div class="step expiry">Then ask ${from} for a join code and run <code>ayo join &lt;code&gt;</code>.</div>`;
+  }
 
   const cta = `<div class="cta"><h2>Pick this up</h2>` +
     `<div class="step">Install Ayo:<code>${escapeHtml(INSTALL_CMD)}</code></div>` +
