@@ -127,6 +127,9 @@ export default {
         if (!hook) return apiError("not_found", "Unknown or revoked webhook.");
         // A hook is the creator's capability. If they've left the team it dies —
         // and firing it must NOT re-add them to the roster (sendAsMember would).
+        // Tradeoff: KV membership is eventually consistent, so a hook fired within
+        // ~a minute of the creator JOINING (across colos) can 404 transiently. The
+        // hook is durable and a retry succeeds; we accept that over the re-roster bug.
         if (!(await getMembership(env, hook.teamId, hook.userId as never))) {
           return apiError("not_found", "Unknown or revoked webhook.");
         }
@@ -140,8 +143,12 @@ export default {
         if (hook.to) {
           to = [hook.to];
         } else if (input.to !== undefined) {
-          if (!Array.isArray(input.to) || input.to.length === 0) {
-            return apiError("bad_request", '`to` must be a non-empty array of handles, e.g. ["wilson"] or ["*"].');
+          if (
+            !Array.isArray(input.to) ||
+            input.to.length === 0 ||
+            !input.to.every((h) => typeof h === "string" && h.trim() !== "")
+          ) {
+            return apiError("bad_request", '`to` must be a non-empty array of handle strings, e.g. ["wilson"] or ["*"].');
           }
           to = input.to;
         } else {
