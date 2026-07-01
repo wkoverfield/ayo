@@ -180,6 +180,49 @@ export interface MembersResponse {
   members: MemberPresence[];
 }
 
+// ── Inbound webhooks ("one curl → Ayo") ──────────────────────────────────────
+
+/** `POST /v1/teams/:id/hooks` — mint a revocable inbound webhook (member only). */
+export interface CreateWebhookRequest {
+  /** Source name shown on inbound pings, e.g. "ci", "github". */
+  label: string;
+  /** Default recipient handle; omit to broadcast to the team. */
+  to?: Handle;
+}
+
+/** A minted/listed webhook. `token` is a bearer secret. On CREATE the creator
+ *  always gets it. On LIST, only the creator sees the token/url of their own
+ *  hooks — for others' hooks `token`/`url` are empty strings (metadata only), so
+ *  a member can't lift a teammate's URL and spoof pings as them. */
+export interface WebhookInfo {
+  token: string;
+  /** The full curl-able URL: `<relay>/v1/hooks/<token>` (empty if not yours). */
+  url: string;
+  label: string;
+  to?: Handle;
+  createdAt: string;
+  /** Handle of the member who created the hook (present on LIST). */
+  createdBy?: Handle;
+}
+
+export type CreateWebhookResponse = WebhookInfo;
+export interface ListWebhooksResponse {
+  hooks: WebhookInfo[];
+}
+
+/** Body a caller POSTs to `/v1/hooks/:token`. Only `text` is required (one curl).
+ *  `urgency` is capped at "normal" server-side — inbound automation never breaks
+ *  through a recipient's heads-down/dnd focus (suppression is first-class). */
+export interface WebhookPingRequest {
+  text: string;
+  /** Override the hook's default recipient(s); `["*"]` broadcasts. */
+  to?: Recipients;
+  /** "low" | "normal" only; "urgent" is coerced to "normal". */
+  urgency?: Urgency;
+  /** Optional headline shown above the text. */
+  title?: string;
+}
+
 // ── Send ───────────────────────────────────────────────────────────────────
 
 /** Body of `POST /v1/teams/:id/ayo` — the server fills id/from/createdAt. */

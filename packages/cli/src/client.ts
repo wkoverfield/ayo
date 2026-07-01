@@ -17,6 +17,9 @@ import type {
   RotateCodeResponse,
   CreateHandoffLinkRequest,
   CreateHandoffLinkResponse,
+  CreateWebhookRequest,
+  CreateWebhookResponse,
+  ListWebhooksResponse,
   MembersResponse,
   MeResponse,
   SendAyoRequest,
@@ -99,6 +102,13 @@ export const api = {
 
   createHandoffLink: (s: Session, teamId: string, body: CreateHandoffLinkRequest) =>
     call<CreateHandoffLinkResponse>(`/v1/teams/${teamId}/handoff-link`, { method: "POST", body, token: s.token }),
+
+  createWebhook: (s: Session, teamId: string, body: CreateWebhookRequest) =>
+    call<CreateWebhookResponse>(`/v1/teams/${teamId}/hooks`, { method: "POST", body, token: s.token }),
+  listWebhooks: (s: Session, teamId: string) =>
+    call<ListWebhooksResponse>(`/v1/teams/${teamId}/hooks`, { token: s.token }),
+  revokeWebhook: (s: Session, teamId: string, token: string) =>
+    call<{ ok: true }>(`/v1/teams/${teamId}/hooks/${token}`, { method: "DELETE", token: s.token }),
 
   inbox: (s: Session, teamId: string, since?: string, unreadOnly = false) => {
     const q = new URLSearchParams();
