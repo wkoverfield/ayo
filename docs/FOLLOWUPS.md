@@ -214,3 +214,24 @@ Deferred:
   Proactively delete a member's hooks when they leave, and a team's on delete.
 - **Signed payloads.** For S4 (GitHub), verify the `X-Hub-Signature-256` HMAC
   rather than relying only on the secret token in the URL.
+
+## GitHub → Ayo (S4)
+
+**Shipped (S4):** `ayo hook create --github` mints an HMAC-verified webhook
+(`POST /v1/gh/<token>`, secret shown once). It routes three high-signal events
+to the matching Ayo handle (= GitHub login): **review_requested** → reviewer,
+**@mentions** in issue / PR-review comments → the mentioned people,
+**pull_request_review submitted** → the PR author. Bots + self-directed events
+dropped; `ping` ACKed; unhandled events 200-no-op (no GitHub retries). Signature
+verified over the raw body with a constant-time compare.
+
+Deferred:
+- **Handle ≠ login.** Routing assumes the Ayo handle equals the GitHub login
+  (the default). Once handles are aliasable, map GitHub login → handle via the
+  team roster instead of passing the login straight through.
+- **Team review requests.** `requested_team` (vs `requested_reviewer`) isn't
+  expanded to members yet — only individual review requests route.
+- **More events.** assigned, PR closed/merged (notify author), check_run failures.
+- **Delivery report.** The gh route returns the DO send result but nothing
+  surfaces unknownRecipients back to the repo admin (a mention of someone not on
+  the team is a silent no-op — arguably fine, but worth a debug surface).
