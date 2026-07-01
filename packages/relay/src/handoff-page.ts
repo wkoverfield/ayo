@@ -1,11 +1,14 @@
 /**
- * Server-rendered HTML for a handoff share link. This is a PUBLIC page rendering
+ * Server-rendered HTML for a handoff share link. PUBLIC page rendering
  * attacker-influenceable content (any sender, any repo/filename/diff), so every
- * interpolated value goes through escapeHtml — the route also sets a strict CSP
- * (no scripts, inline styles only) as defense in depth. No JS, no external deps.
+ * interpolated value goes through escapeHtml — the route also sets a CSP
+ * (scripts blocked; styles + Google Fonts allowed; images only self/data) as
+ * defense in depth. No JS. On-brand: warm paper, coral + navy ink + sage, the
+ * real Ayo mark. Light-mode base, dark via prefers-color-scheme.
  */
 
 import type { HandoffShare } from "@ayo-dev/core";
+import { AYO_LOGO_DATA_URI } from "./ayo-logo.js";
 
 const REPO_URL = "https://github.com/wkoverfield/ayo";
 const INSTALL_CMD = "npm install -g @ayo-dev/cli";
@@ -29,42 +32,113 @@ function timeLeft(expiresAt: string): string {
   return `expires in ~${Math.round(hrs / 24)}d`;
 }
 
+/** Up-to-two-letter initials for the sender avatar. */
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0]![0] ?? "";
+  const last = parts.length > 1 ? (parts[parts.length - 1]![0] ?? "") : "";
+  return (first + last).toUpperCase();
+}
+
+/** Render a git diff as escaped, colorized lines (+ = add, - = del, @@ = hunk). */
+function renderDiff(diff: string): string {
+  return diff
+    .split("\n")
+    .map((line) => {
+      let cls = "row";
+      if (line.startsWith("@@")) cls = "row hunk";
+      else if (line.startsWith("+") && !line.startsWith("+++")) cls = "row add";
+      else if (line.startsWith("-") && !line.startsWith("---")) cls = "row del";
+      return `<div class="${cls}">${escapeHtml(line) || "&nbsp;"}</div>`;
+    })
+    .join("");
+}
+
+const FONTS =
+  "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Sora:wght@400;500;600&display=swap";
+
 const STYLE = `
-:root{color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;background:#0d0f12;color:#e6e8eb;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:32px 16px}
-.wrap{max-width:640px;margin:0 auto}
-.eyebrow{font-size:13px;color:#8b93a1;letter-spacing:.02em;margin-bottom:6px}
-.eyebrow b{color:#e6e8eb}
-h1{font-size:22px;margin:0 0 20px;font-weight:650;line-height:1.35}
-.card{background:#15181d;border:1px solid #23272e;border-radius:12px;padding:16px 18px;margin:14px 0}
-.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8b93a1;margin:0 0 10px;font-weight:600}
-.meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:#b6bcc6}
-.meta code{color:#e6e8eb}
-code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.files{margin:8px 0 0;padding:0;list-style:none;font-size:13px}
-.files li{padding:2px 0;color:#b6bcc6}
-pre.diff{background:#0d0f12;border:1px solid #23272e;border-radius:8px;padding:12px;overflow:auto;font-size:12px;line-height:1.5;max-height:420px;color:#c9ced6}
-.note{white-space:pre-wrap}
-.cta{background:#1a1d23;border:1px solid #2b7a4b;border-radius:12px;padding:18px;margin:22px 0}
-.cta h2{color:#5fd08a}
-.step{margin:10px 0}
-.step code{display:block;background:#0d0f12;border:1px solid #23272e;border-radius:8px;padding:10px 12px;margin-top:4px;color:#e6e8eb;overflow:auto}
-.foot{font-size:12px;color:#6b7280;margin-top:26px;text-align:center}
-.foot a{color:#8b93a1}
-.expiry{font-size:12px;color:#6b7280;margin-top:2px}
+*{box-sizing:border-box;margin:0}
+:root{--paper:#F4EDE1;--card:#FDFBF7;--ink:#2A2E45;--ink2:#585C70;--muted:#847F73;--coral:#E15C3D;--coral-bg:#F9E6DD;--sage:#3E9A6E;--sage-strong:#256B48;--sage-bg:#EAF3EC;--border:#E7DCC9;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace}
+body{background:var(--paper);color:var(--ink);font-family:'Sora',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;line-height:1.6;padding:34px 22px 30px}
+.wrap{max-width:596px;margin:0 auto}
+.rise{opacity:0;transform:translateY(7px);animation:rise .5s cubic-bezier(.2,.7,.2,1) forwards}
+@keyframes rise{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.rise{animation:none;opacity:1;transform:none}}
+.brand{display:flex;align-items:center;gap:11px;margin-bottom:24px}
+.brand img{width:40px;height:40px;border-radius:10px;display:block}
+.brand .tag{font-size:12px;color:var(--muted);letter-spacing:.02em}
+.eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:15px}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--coral);color:#FDEDE7;font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.who{font-size:13.5px;color:var(--ink2)}
+.who b{color:var(--ink);font-weight:600}
+.who .h{color:var(--coral);font-weight:500}
+h1{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:26px;line-height:1.3;letter-spacing:-.015em;color:var(--ink);margin:2px 0 14px}
+.expiry{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);background:#FBF6EC;border:1px solid var(--border);border-radius:999px;padding:4px 11px}
+.expiry::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--sage)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:17px 19px;margin:15px 0;box-shadow:0 1px 2px rgba(42,46,69,.035)}
+.lbl{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:11px}
+.note{white-space:pre-wrap;font-size:14.5px;color:#33374B;line-height:1.62}
+.meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+code{font-family:var(--mono)}
+.chip{font-family:var(--mono);font-size:12.5px;padding:5px 10px;border-radius:8px;background:var(--coral-bg);color:#A63A1B;font-weight:500}
+.pill{font-family:var(--mono);font-size:12px;padding:5px 9px;border-radius:8px;background:#FBF6EC;border:1px solid var(--border);color:var(--ink2)}
+.files{list-style:none;margin:13px 0 0;padding:0}
+.files li{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12.5px;color:#3B3F52;padding:5px 0;border-top:1px solid #F0E8D9}
+.files li:first-child{border-top:0}
+.files li::before{content:"";width:6px;height:6px;border-radius:2px;background:var(--sage);flex:0 0 auto;opacity:.75}
+.diff{margin:0;border-radius:10px;overflow:hidden;border:1px solid #EADFCB}
+.diff .row{font-family:var(--mono);font-size:12px;line-height:1.75;padding:0 13px;white-space:pre;overflow-x:auto;color:#494D5F;background:#FCF8F0}
+.diff .add{background:#E7F1E9;color:#1F5E40}
+.diff .del{background:#FAE7E0;color:#A23A1E}
+.diff .hunk{background:#F1E9DB;color:#8A7F69}
+.cta{background:var(--sage-bg);border:1px solid #CDE3D5;border-radius:15px;padding:20px;margin:22px 0 8px}
+.cta .lbl{color:var(--sage-strong)}
+.cta-h{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:18px;color:var(--ink);margin-bottom:13px;letter-spacing:-.01em}
+.step{display:flex;gap:12px;margin-top:13px}
+.num{width:22px;height:22px;border-radius:50%;background:var(--sage);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:0 0 auto;margin-top:2px}
+.step .body{flex:1;min-width:0}
+.step .t{font-size:13.5px;color:var(--ink);font-weight:500;margin-bottom:6px}
+.term{font-family:var(--mono);font-size:13px;background:var(--ink);color:#F4EDE1;border-radius:9px;padding:10px 13px;overflow-x:auto;display:flex;align-items:center;gap:8px}
+.term::before{content:"$";color:#72C293;font-weight:600}
+.term .code{color:#F7EFE3;font-weight:500;white-space:pre}
+.code-em{color:#F6A98E;font-weight:600}
+.codenote{font-size:11.5px;color:var(--ink2);margin-top:6px}
+.ask{font-size:13.5px;color:var(--ink);line-height:1.55}
+.foot{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;color:var(--muted);margin-top:24px;text-align:center}
+.foot img{width:16px;height:16px;border-radius:4px;vertical-align:middle}
+.foot a{color:var(--ink2);text-decoration:none}
+@media (prefers-color-scheme:dark){
+:root{--paper:#1C1B1E;--card:#242327;--ink:#F1E9DC;--ink2:#BCB6A8;--muted:#8B8577;--coral:#F0795A;--coral-bg:#3A2620;--sage:#66C296;--sage-strong:#93DDB7;--sage-bg:#1F2C26;--border:#33313A}
+.note{color:#DBD4C6}.chip{background:#3A2620;color:#F6A98E}.pill{background:#242327;color:#BCB6A8}
+.expiry{background:#242327}.files li{color:#CFC8BA;border-top-color:#33313A}
+.diff{border-color:#33313A}.diff .row{background:#201F23;color:#BCB6A8}.diff .add{background:#1F2C26;color:#84D3A8}.diff .del{background:#331F1B;color:#F09C7E}.diff .hunk{background:#2A2830;color:#8B8577}
+.cta{background:#1F2C26;border-color:#2E5040}.num{color:#12241B}
+.term{background:#100F12}
+}
 `;
 
 function shell(inner: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+  return (
+    `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width,initial-scale=1">` +
-    `<title>Ayo handoff</title><style>${STYLE}</style></head>` +
-    `<body><div class="wrap">${inner}</div></body></html>`;
+    `<title>Ayo handoff</title>` +
+    `<link rel="preconnect" href="https://fonts.googleapis.com">` +
+    `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>` +
+    `<link rel="stylesheet" href="${FONTS}">` +
+    `<style>${STYLE}</style></head>` +
+    `<body><div class="wrap">${inner}</div></body></html>`
+  );
 }
 
-/** Render a live handoff. Every `${}` here is an escaped value or a constant. */
+const HEADER = `<div class="brand rise"><img src="${AYO_LOGO_DATA_URI}" alt="Ayo" width="40" height="40"><span class="tag">a handoff for you</span></div>`;
+const FOOTER = `<div class="foot rise"><img src="${AYO_LOGO_DATA_URI}" alt=""> Sent with <a href="${REPO_URL}">Ayo</a> — attention pings from inside your terminal &amp; agents</div>`;
+
+/** Render a live handoff. Every `${}` is an escaped value or a constant. */
 export function renderHandoffPage(share: HandoffShare): string {
-  const from = escapeHtml(share.from.name || share.from.handle);
+  const name = share.from.name || share.from.handle;
+  const from = escapeHtml(name);
   const handle = escapeHtml(share.from.handle);
   const team = escapeHtml(share.teamName);
   const ctx = share.context;
@@ -72,57 +146,53 @@ export function renderHandoffPage(share: HandoffShare): string {
   let contextCard = "";
   if (ctx && (ctx.repo || ctx.changedFiles?.length || ctx.diffStat)) {
     const bits: string[] = [];
-    if (ctx.repo) bits.push(`<code>${escapeHtml(ctx.repo)}${ctx.branch ? "@" + escapeHtml(ctx.branch) : ""}</code>`);
-    if (ctx.commit) bits.push(`<span>commit <code>${escapeHtml(ctx.commit)}</code></span>`);
-    if (ctx.diffStat) bits.push(`<span>${escapeHtml(ctx.diffStat)}</span>`);
+    if (ctx.repo) {
+      bits.push(`<span class="chip">${escapeHtml(ctx.repo)}${ctx.branch ? "@" + escapeHtml(ctx.branch) : ""}</span>`);
+    }
+    if (ctx.commit) bits.push(`<span class="pill">commit ${escapeHtml(ctx.commit)}</span>`);
+    if (ctx.diffStat) bits.push(`<span class="pill">${escapeHtml(ctx.diffStat)}</span>`);
     const files = ctx.changedFiles?.length
       ? `<ul class="files">${ctx.changedFiles.map((f) => `<li>${escapeHtml(f)}</li>`).join("")}</ul>`
       : "";
-    contextCard = `<div class="card"><h2>Work context</h2><div class="meta">${bits.join("")}</div>${files}</div>`;
+    contextCard = `<div class="card rise"><div class="lbl">Work context</div><div class="meta">${bits.join("")}</div>${files}</div>`;
   }
 
-  let diffCard = "";
-  if (ctx?.diff) {
-    const trunc = ctx.diffTruncated ? ` <span class="expiry">(truncated)</span>` : "";
-    diffCard = `<div class="card"><h2>Diff${trunc}</h2><pre class="diff">${escapeHtml(ctx.diff)}</pre></div>`;
-  }
-
-  const noteCard = share.note
-    ? `<div class="card"><h2>Notes</h2><div class="note">${escapeHtml(share.note)}</div></div>`
+  const diffCard = ctx?.diff
+    ? `<div class="card rise"><div class="lbl">Diff${ctx.diffTruncated ? " · truncated" : ""}</div><div class="diff">${renderDiff(ctx.diff)}</div></div>`
     : "";
 
-  // Conversion CTA. If the sender embedded a join code, it's a two-command path;
-  // otherwise we tell the viewer to ask the sender for one (never invent a code).
-  // A code can rotate/expire independently of the link, so flag a stale one rather
-  // than hand out a dead command.
-  let joinStep: string;
+  const noteCard = share.note
+    ? `<div class="card rise"><div class="lbl">Notes</div><div class="note">${escapeHtml(share.note)}</div></div>`
+    : "";
+
+  // Conversion CTA. A code can rotate/expire independently of the link, so flag a
+  // stale one rather than hand out a dead command.
+  const installStep = `<div class="step"><div class="num">1</div><div class="body"><div class="t">Install Ayo</div><div class="term"><span class="code">${escapeHtml(INSTALL_CMD)}</span></div></div></div>`;
+  let joinBlock: string;
   if (share.joinCode) {
     const exp = share.joinCodeExpiresAt;
     const codeExpired = exp != null && new Date(exp).getTime() <= Date.now();
     if (codeExpired) {
-      joinStep = `<div class="step expiry">The join code in this handoff has expired — ask ${from} for a fresh <code>ayo invite</code>.</div>`;
+      joinBlock = `<div class="ask">The join code in this handoff has expired — ask ${from} for a fresh <code>ayo invite</code>.</div>`;
     } else {
-      const hint = exp ? ` <span class="expiry">(code ${escapeHtml(timeLeft(exp))})</span>` : "";
-      joinStep = `<div class="step">Then join ${from}'s team:<code>ayo join ${escapeHtml(share.joinCode)}</code>${hint}</div>`;
+      const note = exp ? `<div class="codenote">code ${escapeHtml(timeLeft(exp))}</div>` : "";
+      joinBlock = `<div class="step"><div class="num">2</div><div class="body"><div class="t">Join the team &amp; pick it up</div><div class="term"><span class="code">ayo join <span class="code-em">${escapeHtml(share.joinCode)}</span></span></div>${note}</div></div>`;
     }
   } else {
-    joinStep = `<div class="step expiry">Then ask ${from} for a join code and run <code>ayo join &lt;code&gt;</code>.</div>`;
+    joinBlock = `<div class="ask">Then ask ${from} for a join code and run <code>ayo join &lt;code&gt;</code>.</div>`;
   }
-
-  const cta = `<div class="cta"><h2>Pick this up</h2>` +
-    `<div class="step">Install Ayo:<code>${escapeHtml(INSTALL_CMD)}</code></div>` +
-    joinStep +
-    `</div>`;
+  const cta = `<div class="cta rise"><div class="lbl">Pick this up</div><div class="cta-h">Grab ${from}'s work</div>${installStep}${joinBlock}</div>`;
 
   const body = `
-    <div class="eyebrow"><b>${from}</b> <span>(@${handle})</span> handed off work to you · <b>${team}</b></div>
-    <h1>${escapeHtml(share.blocker)}</h1>
-    <div class="expiry">${escapeHtml(timeLeft(share.expiresAt))}</div>
+    ${HEADER}
+    <div class="eyebrow rise"><div class="avatar">${escapeHtml(initials(name))}</div><div class="who"><b>${from}</b> <span class="h">@${handle}</span> handed off work to you<br>on <b>${team}</b></div></div>
+    <h1 class="rise">${escapeHtml(share.blocker)}</h1>
+    <div class="rise"><span class="expiry">${escapeHtml(timeLeft(share.expiresAt))}</span></div>
     ${noteCard}
     ${contextCard}
     ${diffCard}
     ${cta}
-    <div class="foot">Sent with <a href="${REPO_URL}">Ayo</a> — attention pings from inside your terminal &amp; agents.</div>
+    ${FOOTER}
   `;
   return shell(body);
 }
@@ -130,10 +200,10 @@ export function renderHandoffPage(share: HandoffShare): string {
 /** Shown when a token is unknown or its KV entry has expired. */
 export function renderExpiredPage(): string {
   const body = `
-    <div class="eyebrow">Ayo handoff</div>
-    <h1>This handoff link has expired.</h1>
-    <div class="card note">Handoff links are short-lived by design. Ask whoever sent it to share a fresh one with <code>ayo handoff</code>.</div>
-    <div class="foot">What's Ayo? <a href="${REPO_URL}">${REPO_URL.replace("https://", "")}</a></div>
+    ${HEADER}
+    <h1 class="rise">This handoff link has expired.</h1>
+    <div class="card rise"><div class="note">Handoff links are short-lived by design. Ask whoever sent it to share a fresh one with <code>ayo handoff</code>.</div></div>
+    ${FOOTER}
   `;
   return shell(body);
 }
