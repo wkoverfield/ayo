@@ -263,6 +263,8 @@ function printNextSteps(dry: boolean): void {
   console.log(pc.bold("\n  ✓ You're set."));
   console.log("  From inside Claude or Codex, just say: " + pc.cyan('"Ayo Maya with my current branch."'));
   console.log("  Or from the terminal: " + pc.cyan("ayo <teammate> \"deploy's cooked\""));
+  console.log(pc.dim("  Hand off with context + a shareable link:  ") + pc.cyan("ayo handoff <teammate>"));
+  console.log(pc.dim("  Turn GitHub reviews/@mentions into Ayos:    ") + pc.cyan("ayo hook create --github"));
   console.log(pc.dim("  Restart your agent once so the new wiring takes effect."));
 }
 

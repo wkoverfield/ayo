@@ -6,6 +6,9 @@
 
 **Ping your teammates from inside Codex and Claude.**
 
+Not just a ping — it carries your work (branch, changed files, the blocker) and
+routes the way you already build: **human → agent → agent → human.**
+
 No Slack. No screenshots. No _"what branch are you on?"_
 
 </div>
@@ -19,8 +22,13 @@ No Slack. No screenshots. No _"what branch are you on?"_
 Ayo is the smallest possible sidechannel for developer attention. When the demo
 breaks at 2am you don't want to alt-tab to Slack and re-explain your setup. You
 want to send a teammate an **attention ping with your work context** (repo,
-branch, changed files, the diff, the blocker) without leaving the tool you're
+branch, changed files, diff stat, the blocker) without leaving the tool you're
 already thinking in.
+
+You're both already working _through_ an agent — so the ping does too. You (or
+your agent) hand off with context; it lands where your teammate is working,
+their agent picks it up, and the loop closes. A ping and a handoff are the same
+motion — one just carries more of your work.
 
 ```bash
 ayo maya "demo deploy is cooked, can you tap in?"
@@ -146,7 +154,44 @@ ayo handoff maya --with-diff   # hand off: branch + changed files + diff + block
 ayo status "locked in on demo" # set your status
 ayo board                 # live team dashboard
 ayo inbox                 # your Ayos
+ayo hook create --github  # GitHub review requests / @mentions / reviews → Ayo
 ```
+
+## Hand off with a link
+
+Every `ayo handoff` mints a **shareable link** — a page that renders your
+branch, changed files, diff stat, and the blocker for anyone, **even before
+they're on Ayo**:
+
+```bash
+ayo handoff maya "stuck on the oauth callback"
+  ✓ handoff sent
+  🔗 share link: https://…/h/AbCd…    # works for anyone — expires automatically
+```
+
+Drop it in a text, a PR comment, wherever. Whoever opens it gets your full
+context and a one-step "install → join → pick this up" path (the join code is
+embedded by default; `--no-code` shares context without granting access, or
+`--no-link` skips the link entirely). It's the fastest way to pull a teammate
+_in_.
+
+## Bring the outside in
+
+Attention shouldn't only come from people. `ayo hook create` mints a revocable
+webhook URL so any system — CI, cron, a script, GitHub — can turn an event into
+an Ayo:
+
+```bash
+ayo hook create --label ci --to wilson     # one curl → an Ayo
+  curl -X POST https://…/v1/hooks/<token> -d '{"text":"build failed on main"}'
+
+ayo hook create --github                   # HMAC-verified GitHub webhook
+```
+
+The `--github` hook maps the moments that actually need you — a **review
+requested**, an **@mention** in a PR thread, a **review submitted** on your PR —
+to an Ayo for the matching handle (your Ayo handle = your GitHub login). Inbound
+automation always respects focus: it never breaks through heads-down/dnd.
 
 ## Try it solo (one machine, no teammate)
 

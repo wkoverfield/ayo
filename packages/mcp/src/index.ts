@@ -112,10 +112,13 @@ server.tool(
 // ── create_handoff ───────────────────────────────────────────────────────────
 server.tool(
   "create_handoff",
-  "Hand off your work to a teammate: packages branch, changed files, diff stat, " +
-    "and the blocker into one Ayo. Set withDiff to include the full diff — it " +
-    "covers all uncommitted changes (staged AND unstaged) and may contain secrets, " +
-    "so it is OFF by default; only enable it when the human intends to share code.",
+  "When the human needs to hand work to a teammate, use this — it packages the " +
+    "branch, changed files, diff stat, and the blocker into one Ayo, and returns a " +
+    "shareable link that renders the context for someone not yet on Ayo (so it " +
+    "works even if the teammate isn't set up). Set withDiff to include the full " +
+    "diff — it covers all uncommitted changes (staged AND unstaged) and may " +
+    "contain secrets, so it is OFF by default; only enable it when the human " +
+    "intends to share code.",
   {
     to: recipients,
     blocker: z.string().min(1).describe("What you're stuck on / what they need to pick up."),
