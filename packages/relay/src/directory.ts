@@ -38,8 +38,10 @@ function joinCode(): string {
 /**
  * Mint a join code that isn't already mapped to a team. The 30^6 space makes
  * collisions astronomically unlikely, but a collision would silently hijack an
- * existing team's code, so we get-before-put and retry once. One retry is plenty
- * given the odds; we accept the (vanishing) residual risk rather than loop.
+ * existing team's code, so we get-before-put and retry once. This is a deterrent,
+ * not a guarantee: KV has no atomic compare-and-set, so a TOCTOU race between the
+ * get and the caller's put could still let two teams pick the same code. Given the
+ * ~1-in-30^6 odds we accept that (vanishing) residual risk rather than loop/lock.
  */
 async function freshJoinCode(env: Env): Promise<string> {
   const first = joinCode();
