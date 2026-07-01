@@ -4,7 +4,7 @@
  * one-shot process (CLI, MCP) can perform it without the daemon's socket.
  */
 
-import type { Ayo, AyoContext, AyoKind, AyoSound, Handle, Recipients, Urgency } from "./message.js";
+import type { AskAnswer, AskMeta, Ayo, AyoContext, AyoKind, AyoSound, Handle, Recipients, Urgency } from "./message.js";
 import type { AyoId, TeamId, UserId } from "./ids.js";
 import type { MemberPresence, PresenceStatus } from "./wire.js";
 
@@ -242,7 +242,30 @@ export interface SendAyoRequest {
   urgency?: Urgency;
   context?: AyoContext;
   replyTo?: AyoId | null;
+  /** Required semantics when kind === "ask" (options optional). */
+  ask?: AskMeta;
   expiresAt?: string | null;
+}
+
+// ── Asks (blocking agent questions; see AskMeta/AskAnswer in message.ts) ─────
+
+/** Bounds for an ask's suggested options (rendered as ready-made commands). */
+export const MAX_ASK_OPTIONS = 8;
+export const MAX_ASK_OPTION_LENGTH = 80;
+
+/** `POST /v1/ayo/:id/answer` — answer an ask addressed to you. */
+export interface AnswerAskRequest {
+  answer: string;
+}
+
+/** `GET /v1/ayo/:id/answer` — poll an ask's state (the asking agent long-polls
+ *  this until answered or its own deadline passes). */
+export interface AskStateResponse {
+  answered: boolean;
+  /** Present iff answered. */
+  answer?: AskAnswer;
+  /** True once the ask's expiresAt has passed unanswered. */
+  expired: boolean;
 }
 
 export interface SendAyoResponse {

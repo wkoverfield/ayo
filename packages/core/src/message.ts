@@ -5,7 +5,22 @@
 import type { AyoId, TeamId, UserId } from "./ids.js";
 
 export type Urgency = "low" | "normal" | "urgent";
-export type AyoKind = "ping" | "handoff";
+export type AyoKind = "ping" | "handoff" | "ask";
+
+/** Ask-specific payload (`kind: "ask"`): a blocking question from an agent that
+ *  stays pinned until answered. Options are suggestions — free text always works. */
+export interface AskMeta {
+  /** Suggested answers, rendered as ready-made `ayo answer` commands. */
+  options?: string[];
+}
+
+/** The recorded answer to an ask (stored by the team DO, joined into inbox reads). */
+export interface AskAnswer {
+  answer: string;
+  by: Handle;
+  /** ISO timestamp. */
+  at: string;
+}
 
 /** A handle is a per-team display name; defaults to GitHub login, aliasable. */
 export type Handle = string;
@@ -63,7 +78,13 @@ export interface Ayo {
   context?: AyoContext;
   /** An `ayo_` id, for minimal single-level threading. */
   replyTo?: AyoId | null;
-  /** ISO timestamp; null = never expires. */
+  /** Present iff kind === "ask". */
+  ask?: AskMeta;
+  /** Denormalized read-model field: the DO stamps this onto kind==="ask" items
+   *  when serving the inbox (null = unanswered ask; absent = not an ask). The
+   *  authoritative record lives in DO storage. */
+  askAnswer?: AskAnswer | null;
+  /** ISO timestamp; null = never expires. For asks this is the answer deadline. */
   expiresAt?: string | null;
   /** The sender's chosen sound, stamped by the relay. null/absent = recipient default. */
   sound?: AyoSound | null;

@@ -4,10 +4,12 @@
  * manages the daemon. Receiving is the daemon's job (ADR 0001/0002).
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { Command } from "commander";
 import pc from "picocolors";
 import {
+  AYO_DIR,
   loadConfig,
   saveConfig,
   requireSession,
@@ -383,6 +385,95 @@ hook
     }
   });
 
+// ── agents (the control tower: asks waiting on you) ──────────────────────────
+const ASK_MAP_PATH = join(AYO_DIR, "asks.json");
+const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
+
+function waitingFor(createdAt: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / 60_000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+program
+  .command("agents")
+  .description("Which asks are waiting on you (blocked agents + teammates' questions)")
+  .option("--json", "raw JSON for agents", false)
+  .action(async (opts) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team.");
+      const { ayos } = await api.inbox(s, cfg.activeTeamId, undefined, false);
+      const now = Date.now();
+      const waiting = ayos.filter(
+        (a) =>
+          a.kind === "ask" &&
+          a.askAnswer === null &&
+          (!a.expiresAt || new Date(a.expiresAt).getTime() > now),
+      );
+      if (opts.json) return void console.log(JSON.stringify(waiting, null, 2));
+      if (!waiting.length) return void console.log(pc.dim("nothing waiting on you ✨"));
+      waiting.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)); // longest-waiting first
+      console.log(pc.bold("\n  ⧗ waiting on you") + pc.dim(`   ${waiting.length} blocked`));
+      console.log(pc.dim("  " + "─".repeat(60)));
+      // Snapshot id + question per number: `ayo answer 1 …` then echoes what
+      // was answered, so a stale numbering can never silently mis-answer.
+      const map: Record<string, { id: string; body: string; from: string }> = {};
+      waiting.forEach((a, i) => {
+        const n = i + 1;
+        map[String(n)] = { id: a.id, body: a.body, from: a.from.id === s.userId ? "your agent" : a.from.handle };
+        const mark = CIRCLED[i] ?? `${n}.`;
+        const who = a.from.id === s.userId ? "your agent" : a.from.handle;
+        const where = a.context?.repo ? ` · ${a.context.repo}@${a.context.branch ?? "?"}` : "";
+        console.log(`  ${pc.bold(mark)}  ${pc.cyan(who)}${pc.dim(where)} · ${pc.dim(`waiting ${waitingFor(a.createdAt)}`)}`);
+        console.log(`      ${pc.bold(`"${a.body}"`)}`);
+        if (a.context?.note) console.log(pc.dim(`      ${a.context.note}`));
+        const opts_ = a.ask?.options ?? [];
+        const suggestions = opts_.length
+          ? opts_.map((o) => pc.cyan(`ayo answer ${n} ${o.includes(" ") ? `"${o}"` : o}`)).join(pc.dim("  ·  "))
+          : pc.cyan(`ayo answer ${n} "…"`);
+        console.log(pc.dim("       answer:  ") + suggestions);
+        console.log();
+      });
+      // Number → id map so `ayo answer 1 …` works without typing ids.
+      writeFileSync(ASK_MAP_PATH, JSON.stringify(map));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+// ── answer (close the loop on an ask) ─────────────────────────────────────────
+program
+  .command("answer <which> <answer...>")
+  .description("Answer an ask — by number from `ayo agents`, or by ayo_ id")
+  .action(async (which: string, answerParts: string[]) => {
+    try {
+      const s = requireSession();
+      let id = which;
+      let echo = "";
+      if (!which.startsWith("ayo_")) {
+        const map: Record<string, { id: string; body: string; from: string }> = existsSync(ASK_MAP_PATH)
+          ? (JSON.parse(readFileSync(ASK_MAP_PATH, "utf8")) as Record<string, { id: string; body: string; from: string }>)
+          : {};
+        const mapped = map[which];
+        // Also guards a stale/old-format asks.json (string values) — regenerate.
+        if (!mapped || typeof mapped.id !== "string") {
+          return console.log(pc.yellow(`No ask #${which} — run \`ayo agents\` to see what's waiting.`));
+        }
+        id = mapped.id;
+        echo = ` ${pc.bold(`"${mapped.body}"`)} ${pc.dim(`(${mapped.from})`)} →`;
+      }
+      const answer = answerParts.join(" ");
+      await api.answerAsk(s, id, answer);
+      // Echo WHAT was answered — this tool gates deploys/spends; never blind.
+      console.log(pc.green("✓ answered") + echo + ` ${pc.cyan(answer)}` + pc.dim("  — the agent picks it up within ~3s."));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
 // ── inbox ────────────────────────────────────────────────────────────────────
 program
   .command("inbox")
@@ -397,9 +488,20 @@ program
       const { ayos } = await api.inbox(s, cfg.activeTeamId, undefined, opts.unread);
       if (opts.json) return void console.log(JSON.stringify(ayos, null, 2));
       if (!ayos.length) return void console.log(pc.dim("inbox zero ✨"));
-      for (const a of ayos) {
+      // Unanswered asks PIN to the top — each one is a blocked agent, not a
+      // scrollable message. Everything else keeps chronological order.
+      const isOpenAsk = (a: (typeof ayos)[number]): boolean =>
+        a.kind === "ask" && a.askAnswer === null && (!a.expiresAt || new Date(a.expiresAt).getTime() > Date.now());
+      const pinned = ayos.filter(isOpenAsk);
+      const rest = ayos.filter((a) => !isOpenAsk(a));
+      if (pinned.length) {
+        console.log(pc.bold(`  ⧗ ${pinned.length} waiting on you`) + pc.dim("  — `ayo agents` to answer"));
+      }
+      for (const a of [...pinned, ...rest]) {
         const where = a.context?.branch ? pc.dim(` ${a.context.repo}@${a.context.branch}`) : "";
-        console.log(`${pc.bold(pc.cyan(a.from.handle))}${where}: ${a.body}`);
+        const mark = isOpenAsk(a) ? pc.yellow("⧗ ") : "";
+        const from = a.kind === "ask" && a.from.id === s.userId ? "your agent" : a.from.handle;
+        console.log(`${mark}${pc.bold(pc.cyan(from))}${where}: ${a.body}`);
         if (a.context?.diffStat) console.log(pc.dim(`   ${a.context.diffStat}`));
       }
       // Viewing the inbox is an explicit human action -> mark read.

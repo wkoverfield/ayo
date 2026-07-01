@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 import {
   DEFAULT_RELAY_URL,
+  type AskStateResponse,
   type InboxResponse,
   type MembersResponse,
   type SendAyoRequest,
@@ -34,6 +35,8 @@ export interface Auth {
   token: string;
   relayUrl: string;
   teamId: string;
+  /** Your own handle — asks are self-addressed (your agent asks YOU). */
+  handle: string;
 }
 
 function read<T>(file: string): T | null {
@@ -47,7 +50,7 @@ export function loadAuth(): Auth {
   if (!session) throw new Error("Not logged in — run `ayo login` in a terminal first.");
   if (!config.activeTeamId) throw new Error("No active team — run `ayo team create` or `ayo join`.");
   const relayUrl = process.env.AYO_RELAY_URL ?? config.relayUrl ?? DEFAULT_RELAY_URL;
-  return { token: session.token, relayUrl, teamId: config.activeTeamId };
+  return { token: session.token, relayUrl, teamId: config.activeTeamId, handle: session.handle };
 }
 
 async function call<T>(auth: Auth, path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
@@ -84,6 +87,7 @@ export const relay = {
     call<InboxResponse>(auth, `/v1/teams/${auth.teamId}/inbox${unreadOnly ? "?unreadOnly=1" : ""}`),
   resolve: (auth: Auth, ayoId: string) =>
     call<{ ok: true }>(auth, `/v1/ayo/${ayoId}/resolve`, { method: "POST" }),
+  askState: (auth: Auth, ayoId: string) => call<AskStateResponse>(auth, `/v1/ayo/${ayoId}/answer`),
   members: (auth: Auth) => call<MembersResponse>(auth, `/v1/teams/${auth.teamId}/members`),
   setStatus: (auth: Auth, body: SetStatusRequest) =>
     call<{ ok: true }>(auth, `/v1/teams/${auth.teamId}/status`, { method: "PUT", body }),

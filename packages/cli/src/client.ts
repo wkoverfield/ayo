@@ -118,6 +118,9 @@ export const api = {
     return call<InboxResponse>(`/v1/teams/${teamId}/inbox${qs ? `?${qs}` : ""}`, { token: s.token });
   },
 
+  answerAsk: (s: Session, ayoId: string, answer: string) =>
+    call<{ ok: true }>(`/v1/ayo/${ayoId}/answer`, { method: "POST", body: { answer }, token: s.token }),
+
   markRead: (s: Session, ayoId: string) =>
     call<{ ok: true }>(`/v1/ayo/${ayoId}/read`, { method: "POST", token: s.token }),
 

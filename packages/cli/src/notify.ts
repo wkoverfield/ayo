@@ -33,7 +33,12 @@ export function notifyAyo(ayo: Ayo, opts: { actionable?: boolean } = {}): void {
   const ctx = ayo.context;
   const where = ctx?.repo && ctx?.branch ? ` (${ctx.repo}@${ctx.branch})` : "";
   const urgent = ayo.urgency === "urgent";
-  const title = `${urgent ? "🚨 " : ""}Ayo from ${ayo.from.handle}${where}`;
+  // An ask reads as a question waiting on you, not a message from a person —
+  // and a self-ask names the agent, not you-from-you.
+  const title =
+    ayo.kind === "ask"
+      ? `⧗ ${ayo.from.handle}'s agent asks${where}`
+      : `${urgent ? "🚨 " : ""}Ayo from ${ayo.from.handle}${where}`;
 
   // Signature sound: play the sender's chosen sound (unless the recipient muted
   // it). When one is being handled, keep the toast itself silent so they don't
