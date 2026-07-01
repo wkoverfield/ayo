@@ -418,10 +418,12 @@ program
       waiting.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)); // longest-waiting first
       console.log(pc.bold("\n  ⧗ waiting on you") + pc.dim(`   ${waiting.length} blocked`));
       console.log(pc.dim("  " + "─".repeat(60)));
-      const map: Record<string, string> = {};
+      // Snapshot id + question per number: `ayo answer 1 …` then echoes what
+      // was answered, so a stale numbering can never silently mis-answer.
+      const map: Record<string, { id: string; body: string; from: string }> = {};
       waiting.forEach((a, i) => {
         const n = i + 1;
-        map[String(n)] = a.id;
+        map[String(n)] = { id: a.id, body: a.body, from: a.from.id === s.userId ? "your agent" : a.from.handle };
         const mark = CIRCLED[i] ?? `${n}.`;
         const who = a.from.id === s.userId ? "your agent" : a.from.handle;
         const where = a.context?.repo ? ` · ${a.context.repo}@${a.context.branch ?? "?"}` : "";
@@ -450,16 +452,20 @@ program
     try {
       const s = requireSession();
       let id = which;
+      let echo = "";
       if (!which.startsWith("ayo_")) {
-        const map: Record<string, string> = existsSync(ASK_MAP_PATH)
-          ? (JSON.parse(readFileSync(ASK_MAP_PATH, "utf8")) as Record<string, string>)
+        const map: Record<string, { id: string; body: string; from: string }> = existsSync(ASK_MAP_PATH)
+          ? (JSON.parse(readFileSync(ASK_MAP_PATH, "utf8")) as Record<string, { id: string; body: string; from: string }>)
           : {};
         const mapped = map[which];
         if (!mapped) return console.log(pc.yellow(`No ask #${which} — run \`ayo agents\` to see what's waiting.`));
-        id = mapped;
+        id = mapped.id;
+        echo = ` ${pc.bold(`"${mapped.body}"`)} ${pc.dim(`(${mapped.from})`)} →`;
       }
-      await api.answerAsk(s, id, answerParts.join(" "));
-      console.log(pc.green("✓ answered") + pc.dim(" — the agent picks it up within ~3s."));
+      const answer = answerParts.join(" ");
+      await api.answerAsk(s, id, answer);
+      // Echo WHAT was answered — this tool gates deploys/spends; never blind.
+      console.log(pc.green("✓ answered") + echo + ` ${pc.cyan(answer)}` + pc.dim("  — the agent picks it up within ~3s."));
     } catch (err) {
       fail(err);
     }

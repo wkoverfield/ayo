@@ -192,12 +192,25 @@ server.tool(
       context: ctx,
       expiresAt: new Date(deadline).toISOString(),
     });
+    // Fail FAST if the ask reached nobody (stale handle in session.json, team
+    // mismatch) — blocking for the full timeout on an undelivered ask would
+    // masquerade as "the human is slow" when they never had a chance to see it.
+    if (res.unknownRecipients?.length) {
+      return text(
+        `delivery_failed:true — the ask reached nobody: your handle "${auth.handle}" doesn't match a team member. ` +
+          `Don't wait. Tell the human to run \`ayo doctor\`, then proceed with your best judgment and say what you chose.`,
+      );
+    }
     // Short-poll until answered or the deadline. 3s keeps the human wait snappy
-    // without hammering the relay (~20 req/min while blocked).
+    // without hammering the relay (~20 req/min while blocked). A persistent
+    // failure streak (~30s of dead relay) fails fast — indistinguishable-from-
+    // waiting is the one thing this tool must never be.
+    let failStreak = 0;
     while (Date.now() < deadline) {
       await sleep(3000);
       try {
         const state = await relay.askState(auth, res.id);
+        failStreak = 0;
         if (state.answered && state.answer) {
           return text(
             `Answered by ${state.answer.by}: "${state.answer.answer}" (after ${Math.round((Date.now() - (deadline - minutes * 60_000)) / 60_000)}m). Proceed accordingly.`,
@@ -205,7 +218,13 @@ server.tool(
         }
         if (state.expired) break;
       } catch {
-        /* transient poll failure — keep waiting until the deadline */
+        failStreak++;
+        if (failStreak >= 10) {
+          return text(
+            `relay_unreachable:true — couldn't poll for an answer (~30s of failures). The human may never have seen the ask. ` +
+              `Proceed with your best judgment, state your choice clearly, and try send_ayo to tell them what you decided.`,
+          );
+        }
       }
     }
     return text(

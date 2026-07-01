@@ -62,7 +62,9 @@ export async function surfaceUnread(opts: SurfaceOpts): Promise<void> {
     if (!daemonAlive) await refreshInbox(session.token, cfg.relayUrl, cfg.activeTeamId);
 
     const mine = loadInbox()
-      .ayos.filter((a) => a.from.handle !== session.handle)
+      // Drop your own sends — EXCEPT self-asks: your agent sent it as you, but
+      // human-you is the recipient (mirrors the DO inbox's selfAsk exception).
+      .ayos.filter((a) => a.from.handle !== session.handle || a.kind === "ask")
       .sort((a, b) => (a.id < b.id ? -1 : 1));
 
     const last = getLastSurfaced(opts.surface);

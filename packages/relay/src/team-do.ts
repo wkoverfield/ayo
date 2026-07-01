@@ -135,7 +135,7 @@ export class TeamHub implements DurableObject {
     const answerMatch = path.match(/^\/internal\/ayo\/(ayo_[^/]+)\/answer$/);
     if (answerMatch) {
       if (req.method === "POST") return this.handleAnswer(req, answerMatch[1] as Ayo["id"], userId, handle);
-      if (req.method === "GET") return this.handleAskState(answerMatch[1] as Ayo["id"]);
+      if (req.method === "GET") return this.handleAskState(answerMatch[1] as Ayo["id"], userId, handle);
     }
     const stateMatch = path.match(/^\/internal\/ayo\/(ayo_[^/]+)\/(read|resolve)$/);
     if (stateMatch && req.method === "POST") {
@@ -220,7 +220,30 @@ export class TeamHub implements DurableObject {
     if (input.context && JSON.stringify(input.context).length > 64 * 1024) {
       return apiError("payload_too_large", "Ayo context exceeds 64 KB.");
     }
+    // Server-side type honesty: never store a kind outside the union.
+    if (input.kind !== undefined && !["ping", "handoff", "ask"].includes(input.kind)) {
+      return apiError("bad_request", "kind must be ping, handoff, or ask.");
+    }
+    // expiresAt must be a real timestamp when present — a NaN date would make
+    // every expiry check silently fail open (an ask that never expires).
+    if (input.expiresAt != null && Number.isNaN(new Date(input.expiresAt).getTime())) {
+      return apiError("bad_request", "expiresAt must be a valid ISO timestamp.");
+    }
     const isAsk = input.kind === "ask";
+    if (isAsk) {
+      // A broadcast ask has no coherent semantics: "*" always excludes the
+      // sender (so a self-ask would reach nobody) and would let ANY member
+      // answer. Asks name their addressees.
+      if (input.to.includes("*")) {
+        return apiError("bad_request", "Asks must be addressed to specific teammates, not the whole team.");
+      }
+      // Asks always carry a deadline (a blocked agent must eventually proceed),
+      // bounded so nothing pins the control tower forever.
+      const exp = input.expiresAt ? new Date(input.expiresAt).getTime() : NaN;
+      if (Number.isNaN(exp) || exp <= Date.now() || exp > Date.now() + 24 * 3600 * 1000) {
+        return apiError("bad_request", "An ask needs an expiresAt between now and 24h out.");
+      }
+    }
     if (isAsk && input.ask?.options) {
       const opts = input.ask.options;
       if (
@@ -375,6 +398,14 @@ export class TeamHub implements DurableObject {
    * proceeded on its stated default), and only an addressee may answer.
    */
   private async handleAnswer(req: Request, ayoId: Ayo["id"], userId: UserId, handle: Handle): Promise<Response> {
+    // Parse the body FIRST: the DO input gate only stays closed across storage
+    // awaits — a non-storage await (req.json) between the existing-answer check
+    // and the put would reopen it and let two answers race past the check.
+    const input = (await req.json().catch(() => null)) as AnswerAskRequest | null;
+    const answer = typeof input?.answer === "string" ? input.answer.trim() : "";
+    if (!answer || answer.length > 4096) {
+      return apiError("bad_request", "An answer needs 1–4096 characters.");
+    }
     const ayo = await this.ctx.storage.get<Ayo>(`msg:${ayoId}`);
     if (!ayo) return apiError("not_found", "No such Ayo.");
     if (ayo.kind !== "ask") return apiError("bad_request", "Only asks can be answered — use resolve for pings.");
@@ -386,11 +417,6 @@ export class TeamHub implements DurableObject {
     if (existing) {
       return apiError("bad_request", `Already answered by ${existing.by}: "${existing.answer}".`);
     }
-    const input = (await req.json().catch(() => null)) as AnswerAskRequest | null;
-    const answer = typeof input?.answer === "string" ? input.answer.trim() : "";
-    if (!answer || answer.length > 4096) {
-      return apiError("bad_request", "An answer needs 1–4096 characters.");
-    }
     const ans: AskAnswer = { answer, by: handle, at: new Date().toISOString() };
     await this.ctx.storage.put(`ans:${ayoId}`, ans);
     // Answering closes the loop for the answerer (mirrors resolve).
@@ -398,11 +424,16 @@ export class TeamHub implements DurableObject {
     return Response.json({ ok: true });
   }
 
-  /** Poll an ask's state — the asking agent short-polls this until answered. */
-  private async handleAskState(ayoId: Ayo["id"]): Promise<Response> {
+  /** Poll an ask's state — the asking agent short-polls this until answered.
+   *  Scoped to the ask's participants (sender or an addressee): a directed 1:1
+   *  ask's answer is not any other member's business, ULIDs or not. */
+  private async handleAskState(ayoId: Ayo["id"], userId: UserId, handle: Handle): Promise<Response> {
     const ayo = await this.ctx.storage.get<Ayo>(`msg:${ayoId}`);
     if (!ayo) return apiError("not_found", "No such Ayo.");
     if (ayo.kind !== "ask") return apiError("bad_request", "Not an ask.");
+    if (ayo.from.id !== userId && !this.addressedTo(ayo, handle)) {
+      return apiError("forbidden", "This ask isn't yours to watch.");
+    }
     const ans = await this.ctx.storage.get<AskAnswer>(`ans:${ayoId}`);
     const expired = !ans && !!ayo.expiresAt && new Date(ayo.expiresAt).getTime() <= Date.now();
     const body: AskStateResponse = { answered: !!ans, answer: ans ?? undefined, expired };
