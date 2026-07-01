@@ -10,14 +10,11 @@
 
 import type { HandoffShare } from "@ayo-dev/core";
 import type { Env } from "./env.js";
+import { urlSafeToken } from "./token.js";
 
-/** 128-bit URL-safe token. This is a bearer capability for a public page, so it
- *  must be unguessable — CSPRNG, base64url, no padding. */
+/** 128-bit URL-safe token — a bearer capability for a public page. */
 export function newShareToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return urlSafeToken(16);
 }
 
 export async function putHandoffShare(

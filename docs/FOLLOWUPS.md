@@ -189,3 +189,25 @@ roster — and (b) a public unauthenticated write endpoint = an abuse surface
 Path when we build it: a `/h/<token>/reply` public route → a dedicated DO
 internal endpoint that stores a reply Ayo with a snapshot `from` WITHOUT
 roster-registering it, tightly rate-limited by IP + per-token.
+
+## Inbound webhooks (S3) — deferred hardening
+
+**Shipped (S3):** `ayo hook create|list|revoke` mint a revocable, unguessable
+`POST /v1/hooks/<token>` URL. One curl (`{"text":"..."}`) fires an Ayo into the
+team, attributed to the creating member with the hook's `[label]` prefixed.
+Suppression is first-class: it routes through the normal DO send, so
+heads-down/dnd recipients get `held`, and `urgency` is capped at `normal`
+(inbound automation never breaks focus). Per-token rate-limit 30/min.
+
+Deferred:
+- **Synthetic bot identity.** Inbound pings show as *from the creator*, not a
+  distinct "github"/"ci" bot member. A real bot identity (own roster entry,
+  presence-exempt) is cleaner but needs a bot-user model — left out of v1.
+- **Urgent opt-in.** Urgent is coerced to normal. A hook created with an
+  explicit `--allow-urgent` capability could break through for true alerts
+  (prod down). Needs a per-hook capability flag + UI.
+- **Revoke on leave / team delete.** A hook outlives its creator leaving the
+  team (the Ayo would then be from a non-member). Revoke a member's hooks when
+  they leave, and a team's hooks on delete.
+- **Signed payloads.** For S4 (GitHub), verify the `X-Hub-Signature-256` HMAC
+  rather than relying only on the secret token in the URL.

@@ -21,6 +21,12 @@ import type {
   CreateHandoffLinkRequest,
   CreateHandoffLinkResponse,
   HandoffShare,
+  CreateWebhookRequest,
+  CreateWebhookResponse,
+  ListWebhooksResponse,
+  WebhookInfo,
+  WebhookPingRequest,
+  SendAyoRequest,
   MeResponse,
   PublicUser,
 } from "@ayo-dev/core";
@@ -56,6 +62,7 @@ import {
 } from "./directory.js";
 import { getHandoffShare, putHandoffShare } from "./handoff.js";
 import { renderHandoffPage, renderExpiredPage } from "./handoff-page.js";
+import { createWebhook, deleteWebhook, getWebhook, listWebhooks } from "./hooks.js";
 
 export { TeamHub } from "./team-do.js";
 
@@ -104,6 +111,30 @@ export default {
             "referrer-policy": "no-referrer",
           },
         });
+      }
+
+      // ── Inbound webhook (no session — "one curl → Ayo") ─────────────────
+      const hookMatch = path.match(/^\/v1\/hooks\/([A-Za-z0-9_-]{16,64})$/);
+      if (hookMatch && req.method === "POST") {
+        const token = hookMatch[1]!;
+        const hook = await getWebhook(env, token);
+        if (!hook) return apiError("not_found", "Unknown or revoked webhook.");
+        // The token is a public write credential — cap firing rate per hook.
+        if (await overRateLimit(env, `hook:${token}`, 30, 60)) {
+          return apiError("rate_limited", "This webhook is firing too fast — slow down.");
+        }
+        const input = (await req.json().catch(() => ({}))) as WebhookPingRequest;
+        if (typeof input.text !== "string" || input.text.trim() === "") {
+          return apiError("bad_request", "A webhook ping needs a non-empty `text`.");
+        }
+        const to = input.to ?? (hook.to ? [hook.to] : ["*"]);
+        // Suppression is first-class: inbound automation NEVER breaks through a
+        // recipient's focus. Cap urgency at "normal" (urgent → normal).
+        const urgency = input.urgency === "low" ? "low" : "normal";
+        const headline = typeof input.title === "string" && input.title.trim() ? `${input.title.trim()}\n\n` : "";
+        const body = `[${hook.label}] ${headline}${input.text.trim()}`.slice(0, 4096);
+        const send: SendAyoRequest = { to, body, kind: "ping", urgency };
+        return await sendAsMember(env, hook.teamId, hook.userId, hook.handle, send);
       }
 
       // ── Everything below requires a session ─────────────────────────────
@@ -294,6 +325,66 @@ export default {
         return json(resBody, { status: 201 });
       }
 
+      // ── Inbound webhooks: mint / list / revoke (member only) ────────────
+      const hooksMatch = path.match(/^\/v1\/teams\/(team_[^/]+)\/hooks$/);
+      if (hooksMatch) {
+        const teamId = hooksMatch[1] as never;
+        if (!(await getMembership(env, teamId, userId))) {
+          return apiError("not_a_member", "You are not a member of this team.");
+        }
+        if (req.method === "POST") {
+          const input = (await req.json().catch(() => ({}))) as CreateWebhookRequest;
+          const label = typeof input.label === "string" ? input.label.trim() : "";
+          if (!label || label.length > 40) {
+            return apiError("bad_request", "A webhook needs a label of 1–40 characters.");
+          }
+          const membership = await getMembership(env, teamId, userId);
+          const meta = {
+            teamId,
+            userId: userId as never,
+            handle: membership!.handle,
+            label,
+            to: typeof input.to === "string" && input.to.trim() ? input.to.trim() : undefined,
+            createdAt: new Date().toISOString(),
+          };
+          const token = await createWebhook(env, meta);
+          const info: CreateWebhookResponse = {
+            token,
+            url: `${url.origin}/v1/hooks/${token}`,
+            label: meta.label,
+            to: meta.to,
+            createdAt: meta.createdAt,
+          };
+          return json(info, { status: 201 });
+        }
+        if (req.method === "GET") {
+          const rows = await listWebhooks(env, teamId);
+          const hooks: WebhookInfo[] = rows.map((r) => ({
+            token: r.token,
+            url: `${url.origin}/v1/hooks/${r.token}`,
+            label: r.label,
+            to: r.to,
+            createdAt: r.createdAt,
+          }));
+          return json({ hooks } satisfies ListWebhooksResponse);
+        }
+      }
+
+      const hookRevoke = path.match(/^\/v1\/teams\/(team_[^/]+)\/hooks\/([A-Za-z0-9_-]{16,64})$/);
+      if (hookRevoke && req.method === "DELETE") {
+        const teamId = hookRevoke[1] as never;
+        const token = hookRevoke[2]!;
+        if (!(await getMembership(env, teamId, userId))) {
+          return apiError("not_a_member", "You are not a member of this team.");
+        }
+        const hook = await getWebhook(env, token);
+        // Scope the delete to THIS team — a token from another team must not be
+        // revocable here (and a missing one is a no-op 404, not a leak).
+        if (!hook || hook.teamId !== teamId) return apiError("not_found", "No such webhook on this team.");
+        await deleteWebhook(env, token);
+        return json({ ok: true });
+      }
+
       // ── Flat ayo read/resolve -> resolve team, then forward ─────────────
       const flatAyo = path.match(/^\/v1\/ayo\/(ayo_[^/]+)\/(read|resolve)$/);
       if (flatAyo && req.method === "POST") {
@@ -342,6 +433,32 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Send an Ayo into a team DO under a member's identity, from a body the Worker
+ * built itself (not forwarded from the client) — used by the inbound webhook,
+ * where there's no session to forward. Injects the trusted x-ayo-* headers the
+ * DO requires; the DO applies suppression (held) like any other send.
+ */
+async function sendAsMember(
+  env: Env,
+  teamId: string,
+  userId: string,
+  handle: string,
+  body: SendAyoRequest,
+): Promise<Response> {
+  const stub = env.TEAM.get(env.TEAM.idFromName(teamId));
+  const headers = new Headers({
+    "content-type": "application/json",
+    "x-ayo-user": userId,
+    "x-ayo-handle": handle,
+    "x-ayo-team": teamId,
+  });
+  if (env.INTERNAL_SECRET) headers.set("x-ayo-internal", env.INTERNAL_SECRET);
+  return stub.fetch(
+    new Request("https://team/internal/ayo", { method: "POST", headers, body: JSON.stringify(body) }),
+  );
+}
 
 async function loadUser(env: Env, userId: string): Promise<PublicUser | null> {
   const raw = await env.AYO_KV.get(`user:${userId}`);

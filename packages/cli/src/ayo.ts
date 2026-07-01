@@ -290,6 +290,69 @@ program
     }
   });
 
+// ── hook (inbound webhooks: one curl → Ayo) ──────────────────────────────────
+const hook = program
+  .command("hook")
+  .description("Inbound webhooks — fire an Ayo into your team from any script or service");
+hook
+  .command("create")
+  .description("Mint a webhook URL that turns one curl into an Ayo")
+  .option("--to <handle>", "default recipient (omit to broadcast to the team)")
+  .option("--label <name>", "source name shown on the ping (e.g. ci, github)", "hook")
+  .action(async (opts) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      const info = await api.createWebhook(s, cfg.activeTeamId, {
+        label: opts.label,
+        to: opts.to ? resolveHandle(cfg, opts.to) : undefined,
+      });
+      console.log(pc.green("✓ webhook created") + pc.dim(`   [${info.label}]${info.to ? ` → ${info.to}` : " → team"}`));
+      console.log("  " + pc.cyan(info.url));
+      console.log(pc.dim("\n  Fire it with one curl:"));
+      console.log(pc.dim(`    curl -X POST ${info.url} \\`));
+      console.log(pc.dim(`      -H 'content-type: application/json' -d '{"text":"build passed ✅"}'`));
+      console.log(
+        pc.dim("\n  Keep this URL secret — anyone with it can ping your team. Revoke with `ayo hook revoke <url>`."),
+      );
+    } catch (err) {
+      fail(err);
+    }
+  });
+hook
+  .command("list")
+  .description("List your team's inbound webhooks")
+  .action(async () => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team.");
+      const { hooks } = await api.listWebhooks(s, cfg.activeTeamId);
+      if (!hooks.length) return console.log(pc.dim("No webhooks yet. `ayo hook create`."));
+      for (const h of hooks) {
+        console.log(`  ${pc.bold(`[${h.label}]`)}${h.to ? ` → ${h.to}` : " → team"}   ${pc.dim(h.url)}`);
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+hook
+  .command("revoke <token>")
+  .description("Revoke an inbound webhook (accepts the full URL or the bare token)")
+  .action(async (token: string) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      if (!cfg.activeTeamId) return console.log("No active team.");
+      const t = token.includes("/") ? token.split("/").filter(Boolean).pop()! : token;
+      await api.revokeWebhook(s, cfg.activeTeamId, t);
+      console.log(pc.green("✓ webhook revoked"));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
 // ── inbox ────────────────────────────────────────────────────────────────────
 program
   .command("inbox")
