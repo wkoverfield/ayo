@@ -235,3 +235,21 @@ Deferred:
 - **Delivery report.** The gh route returns the DO send result but nothing
   surfaces unknownRecipients back to the repo admin (a mention of someone not on
   the team is a silent no-op — arguably fine, but worth a debug surface).
+
+## Toast-click → open the handoff page (Apple-gated)
+
+Clicking an Ayo notification could open its handoff share page in the browser.
+Not wired, and blocked on two things:
+1. The share URL isn't in the delivered Ayo — `ayo handoff` mints the link for
+   the SENDER only; the recipient's payload has no URL. Attach the link to the
+   handoff Ayo first.
+2. Open-on-click is helper-gated on macOS: the plain `osascript` toast has no
+   click action, so only the signed `Ayo.app` helper can do it (add an "Open"
+   action alongside → My agent / Reply / Copy / Resolve). Lights up only where
+   the notarized helper is installed — same Apple Developer gate as the
+   clickable-toast work. (Linux/Windows node-notifier can open a URL on click
+   without a signed helper.)
+
+Lower priority: a team member already gets full context in their inbox/agent —
+the page is the non-user conversion surface, so toast→page is mostly redundant
+for members. Revisit once the Apple Developer ID / notarization is sorted.
