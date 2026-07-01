@@ -21,6 +21,11 @@ export interface WebhookMeta {
   label: string;
   /** Default recipient handle; absent = broadcast to the team. */
   to?: Handle;
+  /** "github" hooks POST to /v1/gh/<token>, are HMAC-verified, and route by
+   *  event (recipients derived from the payload, not `to`). Absent = generic. */
+  kind?: "github";
+  /** HMAC secret for a github hook (verifies X-Hub-Signature-256). Never listed. */
+  secret?: string;
   createdAt: string;
 }
 
@@ -31,6 +36,7 @@ interface WebhookRow {
   token: string;
   label: string;
   to?: Handle;
+  kind?: "github";
   createdAt: string;
   createdBy: Handle;
 }
@@ -41,6 +47,7 @@ export async function createWebhook(env: Env, meta: WebhookMeta): Promise<string
     token,
     label: meta.label,
     to: meta.to,
+    kind: meta.kind,
     createdAt: meta.createdAt,
     createdBy: meta.handle,
   };

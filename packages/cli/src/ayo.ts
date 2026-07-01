@@ -298,16 +298,35 @@ hook
   .command("create")
   .description("Mint a webhook URL that turns one curl into an Ayo")
   .option("--to <handle>", "default recipient (omit to broadcast to the team)")
-  .option("--label <name>", "source name shown on the ping (e.g. ci, github)", "hook")
+  .option("--label <name>", "source name shown on the ping (e.g. ci, github)")
+  .option("--github", "mint a GitHub webhook (review requests, @mentions, reviews → Ayo)", false)
   .action(async (opts) => {
     try {
       const s = requireSession();
       const cfg = loadConfig();
       if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      if (opts.github && opts.to) {
+        console.log(pc.yellow("⚠ --to is ignored for GitHub webhooks — recipients come from the event (reviewer, mentioned, author)."));
+      }
       const info = await api.createWebhook(s, cfg.activeTeamId, {
-        label: opts.label,
-        to: opts.to ? resolveHandle(cfg, opts.to) : undefined,
+        label: opts.label ?? (opts.github ? "github" : "hook"),
+        to: opts.github || !opts.to ? undefined : resolveHandle(cfg, opts.to),
+        github: opts.github || undefined,
       });
+      if (info.kind === "github") {
+        console.log(pc.green("✓ GitHub webhook created") + pc.dim(`   [${info.label}]`));
+        console.log(pc.dim("\n  Add it in your repo → Settings → Webhooks → Add webhook:"));
+        console.log("    Payload URL:  " + pc.cyan(info.url));
+        console.log("    Content type: " + pc.bold("application/json"));
+        console.log("    Secret:       " + pc.bold(info.secret ?? ""));
+        console.log(pc.dim("    Events:       Pull requests, Pull request reviews, Issue comments, PR review comments"));
+        console.log(
+          pc.dim(
+            "\n  Review requests, @mentions, and review submissions become Ayos to the\n  matching handle (Ayo handle = GitHub login). Secret shown once — revoke with `ayo hook revoke <url>`.",
+          ),
+        );
+        return;
+      }
       console.log(pc.green("✓ webhook created") + pc.dim(`   [${info.label}]${info.to ? ` → ${info.to}` : " → team"}`));
       console.log("  " + pc.cyan(info.url));
       console.log(pc.dim("\n  Fire it with one curl:"));
@@ -331,7 +350,7 @@ hook
       const { hooks } = await api.listWebhooks(s, cfg.activeTeamId);
       if (!hooks.length) return console.log(pc.dim("No webhooks yet. `ayo hook create`."));
       for (const h of hooks) {
-        const scope = h.to ? ` → ${h.to}` : " → team";
+        const scope = h.kind === "github" ? pc.dim(" (github)") : h.to ? ` → ${h.to}` : " → team";
         // The relay only returns the URL for hooks YOU created (it's a secret).
         const tail = h.url ? pc.dim(h.url) : pc.dim(`(created by ${h.createdBy ?? "?"} — URL hidden)`);
         console.log(`  ${pc.bold(`[${h.label}]`)}${scope}   ${tail}`);

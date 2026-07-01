@@ -188,6 +188,10 @@ export interface CreateWebhookRequest {
   label: string;
   /** Default recipient handle; omit to broadcast to the team. */
   to?: Handle;
+  /** Mint a GitHub webhook: HMAC-verified, POSTed to /v1/gh/<token>, and routed
+   *  by event (review requests, @mentions, review submissions) rather than `to`.
+   *  The response carries a one-time `secret` to paste into GitHub. */
+  github?: boolean;
 }
 
 /** A minted/listed webhook. `token` is a bearer secret. On CREATE the creator
@@ -203,6 +207,11 @@ export interface WebhookInfo {
   createdAt: string;
   /** Handle of the member who created the hook (present on LIST). */
   createdBy?: Handle;
+  /** "github" for a GitHub webhook (routes by event); absent = generic. */
+  kind?: "github";
+  /** The HMAC secret to paste into GitHub — returned ONCE on create for a github
+   *  hook, never on list. */
+  secret?: string;
 }
 
 export type CreateWebhookResponse = WebhookInfo;

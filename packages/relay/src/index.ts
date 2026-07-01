@@ -64,6 +64,8 @@ import {
 import { getHandoffShare, putHandoffShare } from "./handoff.js";
 import { renderHandoffPage, renderExpiredPage } from "./handoff-page.js";
 import { createWebhook, deleteWebhook, getWebhook, listWebhooks } from "./hooks.js";
+import { verifyGithubSignature, mapGithubEvent } from "./github-webhook.js";
+import { urlSafeToken } from "./token.js";
 
 export { TeamHub } from "./team-do.js";
 
@@ -125,6 +127,9 @@ export default {
         const token = hookMatch[1]!;
         const hook = await getWebhook(env, token);
         if (!hook) return apiError("not_found", "Unknown or revoked webhook.");
+        if (hook.kind === "github") {
+          return apiError("bad_request", "This is a GitHub webhook — point GitHub at /v1/gh/<token>.");
+        }
         // A hook is the creator's capability. If they've left the team it dies —
         // and firing it must NOT re-add them to the roster (sendAsMember would).
         // Tradeoff: KV membership is eventually consistent, so a hook fired within
@@ -170,6 +175,53 @@ export default {
         const text = input.text.trim().slice(0, 4096);
         const body = `[${hook.label}] ${headline}${text}`.slice(0, 4096);
         const send: SendAyoRequest = { to, body, kind: "ping", urgency };
+        return await sendAsMember(env, hook.teamId, hook.userId, hook.handle, send);
+      }
+
+      // ── GitHub webhook (no session — HMAC-verified) → Ayo ───────────────
+      const ghMatch = path.match(/^\/v1\/gh\/([A-Za-z0-9_-]{16,64})$/);
+      if (ghMatch && req.method === "POST") {
+        if (await overRateLimit(env, `gh-probe:${clientIp(req)}`, 120, 60)) {
+          return apiError("rate_limited", "Too many webhook requests from this IP.");
+        }
+        const token = ghMatch[1]!;
+        const hook = await getWebhook(env, token);
+        if (!hook || hook.kind !== "github" || !hook.secret) {
+          return apiError("not_found", "Unknown or revoked webhook.");
+        }
+        // HMAC-verify over the RAW body before trusting anything in it.
+        const raw = await req.text();
+        if (!(await verifyGithubSignature(hook.secret, raw, req.headers.get("x-hub-signature-256")))) {
+          return apiError("unauthorized", "Bad or missing signature.");
+        }
+        // GitHub's setup ping — ACK so the webhook shows green.
+        const event = req.headers.get("x-github-event") ?? "";
+        if (event === "ping") return json({ ok: true });
+        // Per-token cap BEFORE the membership KV read (so a valid-HMAC caller
+        // can't probe membership at the full rate).
+        if (await overRateLimit(env, `hook:${token}`, 60, 60)) {
+          return apiError("rate_limited", "This webhook is firing too fast — slow down.");
+        }
+        // Creator must still be a member (mirrors the generic hook; no re-roster).
+        if (!(await getMembership(env, hook.teamId, hook.userId as never))) {
+          return apiError("not_found", "Unknown or revoked webhook.");
+        }
+        let payload: unknown;
+        try {
+          payload = JSON.parse(raw);
+        } catch {
+          return apiError("bad_request", "Body is not valid JSON.");
+        }
+        const mapped = mapGithubEvent(event, payload);
+        // Not an event we route (or self-directed) — ACK 200 so GitHub won't retry.
+        if (!mapped) return json({ ok: true, routed: false });
+        // Defense in depth at the trust boundary: recipients come from the payload,
+        // so keep only real GitHub-login shapes (no "*", no broadcast) and cap the
+        // fanout, regardless of what mapGithubEvent returns.
+        const recipients = mapped.to.filter((h) => /^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/.test(h)).slice(0, 20);
+        if (recipients.length === 0) return json({ ok: true, routed: false });
+        const body = `[${hook.label}] ${mapped.body}`.slice(0, 4096);
+        const send: SendAyoRequest = { to: recipients, body, kind: "ping", urgency: "normal" };
         return await sendAsMember(env, hook.teamId, hook.userId, hook.handle, send);
       }
 
@@ -373,22 +425,32 @@ export default {
           if (!label || label.length > 40) {
             return apiError("bad_request", "A webhook needs a label of 1–40 characters.");
           }
+          const isGithub = input.github === true;
+          // GitHub signs payloads with a shared secret; the URL token alone isn't
+          // the auth for a github hook (the HMAC is), so mint a strong secret.
+          const secret = isGithub ? urlSafeToken(24) : undefined;
           const meta = {
             teamId,
             userId: userId as never,
             handle: membership.handle,
             label,
-            to: typeof input.to === "string" && input.to.trim() ? input.to.trim() : undefined,
+            // A github hook routes by event, so a pinned `to` doesn't apply.
+            to: !isGithub && typeof input.to === "string" && input.to.trim() ? input.to.trim() : undefined,
+            kind: isGithub ? ("github" as const) : undefined,
+            secret,
             createdAt: new Date().toISOString(),
           };
           const token = await createWebhook(env, meta);
           const info: CreateWebhookResponse = {
             token,
-            url: `${url.origin}/v1/hooks/${token}`,
+            url: `${url.origin}${isGithub ? "/v1/gh/" : "/v1/hooks/"}${token}`,
             label: meta.label,
             to: meta.to,
             createdAt: meta.createdAt,
             createdBy: meta.handle,
+            kind: meta.kind,
+            // The secret is returned ONCE, here — never on list.
+            secret,
           };
           return json(info, { status: 201 });
         }
@@ -398,13 +460,15 @@ export default {
           // Others see metadata only, so a member can't lift a teammate's URL.
           const hooks: WebhookInfo[] = rows.map((r) => {
             const owned = r.createdBy === membership.handle;
+            const base = r.kind === "github" ? "/v1/gh/" : "/v1/hooks/";
             return {
               token: owned ? r.token : "",
-              url: owned ? `${url.origin}/v1/hooks/${r.token}` : "",
+              url: owned ? `${url.origin}${base}${r.token}` : "",
               label: r.label,
               to: r.to,
               createdAt: r.createdAt,
               createdBy: r.createdBy,
+              kind: r.kind,
             };
           });
           return json({ hooks } satisfies ListWebhooksResponse);
