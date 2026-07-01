@@ -106,10 +106,11 @@ export default {
             // `private` so no shared/CDN cache can serve a link past its KV expiry
             // (min TTL is 60s); each token is unique so shared caching buys nothing.
             "cache-control": share ? "private, max-age=30" : "no-store",
-            // Strict CSP: no scripts, inline styles only, unframeable. Defense in
-            // depth atop escapeHtml on a public page rendering arbitrary content.
+            // CSP: no scripts (defense in depth atop escapeHtml on a public page
+            // rendering arbitrary content). Styles inline + Google Fonts CSS; font
+            // files from gstatic; images only the embedded data-URI logo. Unframeable.
             "content-security-policy":
-              "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+              "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
             "x-content-type-options": "nosniff",
             "referrer-policy": "no-referrer",
           },
