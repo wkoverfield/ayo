@@ -15,6 +15,8 @@ import {
   type SendAyoRequest,
   type SendAyoResponse,
   type SetStatusRequest,
+  type CreateHandoffLinkRequest,
+  type CreateHandoffLinkResponse,
 } from "@ayo-dev/core";
 
 const AYO_DIR = process.env.AYO_DIR ? resolve(process.env.AYO_DIR) : join(homedir(), ".ayo");
@@ -76,6 +78,8 @@ async function call<T>(auth: Auth, path: string, opts: { method?: string; body?:
 export const relay = {
   send: (auth: Auth, body: SendAyoRequest) =>
     call<SendAyoResponse>(auth, `/v1/teams/${auth.teamId}/ayo`, { method: "POST", body }),
+  createHandoffLink: (auth: Auth, body: CreateHandoffLinkRequest) =>
+    call<CreateHandoffLinkResponse>(auth, `/v1/teams/${auth.teamId}/handoff-link`, { method: "POST", body }),
   inbox: (auth: Auth, unreadOnly: boolean) =>
     call<InboxResponse>(auth, `/v1/teams/${auth.teamId}/inbox${unreadOnly ? "?unreadOnly=1" : ""}`),
   resolve: (auth: Auth, ayoId: string) =>

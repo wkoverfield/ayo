@@ -169,3 +169,23 @@ validated; generic error messages). Still deferred:
 - **Team-size cap** — `addMember` is unbounded. A leaked permanent code + no cap
   = a team can be flooded. Cheapest of these three; arguably the most urgent
   given the relay already has abuse caps elsewhere.
+
+## Handoff share links — reply-without-install (S1b)
+
+**Shipped (S1):** `ayo handoff` / `create_handoff` mint a public, expiring URL
+(`/h/<token>`) that renders the handoff's context to a non-user, with an
+install→join CTA (embeds the team join code by default; opt out with
+`--no-link` is for the whole link, `includeJoinCode:false` for the code). The
+snapshot is self-contained in KV (`share:<token>`), so the render path never
+touches the team DO. Strict CSP + full HTML escaping on the public page.
+
+**Deferred (S1b) — anonymous reply-back.** The deepest Loom hook is letting a
+NON-user reply/claim from the page and having it land in the sender's inbox
+(recipient→creator pull). Deferred because it needs (a) an injected DO identity
+for a sender who isn't a roster member — today `team-do.ts` `rememberMember()`
+runs on every internal call, so a synthetic "via-link" sender would pollute the
+roster — and (b) a public unauthenticated write endpoint = an abuse surface
+(spam to inboxes) needing its own rate-limit + captcha/proof-of-work thinking.
+Path when we build it: a `/h/<token>/reply` public route → a dedicated DO
+internal endpoint that stores a reply Ayo with a snapshot `from` WITHOUT
+roster-registering it, tightly rate-limited by IP + per-token.
