@@ -80,6 +80,7 @@ h1{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:26px;l
 .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:17px 19px;margin:15px 0;box-shadow:0 1px 2px rgba(42,46,69,.035)}
 .lbl{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:11px}
 .note{white-space:pre-wrap;font-size:14.5px;color:#33374B;line-height:1.62}
+.note a{color:#A63A1B;font-weight:500}
 .meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 code{font-family:var(--mono)}
 .chip{font-family:var(--mono);font-size:12.5px;padding:5px 10px;border-radius:8px;background:var(--coral-bg);color:#A63A1B;font-weight:500;max-width:100%;word-break:break-all}
@@ -94,6 +95,21 @@ code{font-family:var(--mono)}
 .diff .add{background:#E7F1E9;color:#1F5E40}
 .diff .del{background:#FAE7E0;color:#A23A1E}
 .diff .hunk{background:#F1E9DB;color:#5C5445}
+.reply{background:#FBF1EA;border:1.5px solid #EBC4B4;border-radius:15px;padding:20px;margin:22px 0 0}
+.reply .lbl{color:#A63A1B}
+.reply-h{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:18px;color:var(--ink);margin-bottom:4px;letter-spacing:-.01em}
+.reply-sub{font-size:13px;color:var(--ink2);margin-bottom:12px}
+.field{width:100%;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font:inherit;font-size:14px;color:var(--ink);margin-bottom:9px}
+textarea.field{min-height:72px;resize:vertical}
+.frow{display:flex;gap:9px;align-items:stretch}
+.frow .field{flex:1;margin-bottom:0}
+.btn{background:var(--coral);color:#fff;font:inherit;font-weight:600;font-size:14px;border-radius:9px;padding:10px 18px;border:none;cursor:pointer;white-space:nowrap}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.hint{font-size:11.5px;color:var(--muted);margin-top:8px}
+.sent{display:flex;align-items:center;gap:12px;background:#FBF1EA;border:1.5px solid #EBC4B4;border-radius:15px;padding:18px;margin:0 0 15px}
+.sent .check{width:32px;height:32px;border-radius:50%;background:var(--coral);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 auto}
+.sent-h{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:16px;color:var(--ink)}
+.sent-sub{font-size:12.5px;color:var(--ink2)}
 .cta{background:var(--sage-bg);border:1px solid #CDE3D5;border-radius:15px;padding:20px;margin:22px 0 8px}
 .cta .lbl{color:var(--sage-strong)}
 .cta-h{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:18px;color:var(--ink);margin-bottom:13px;letter-spacing:-.01em}
@@ -117,6 +133,11 @@ code{font-family:var(--mono)}
 .diff{border-color:#33313A}.diff .row{background:#201F23;color:#BCB6A8}.diff .add{background:#1F2C26;color:#84D3A8}.diff .del{background:#331F1B;color:#F09C7E}.diff .hunk{background:#2A2830;color:#A89F8F}
 .cta{background:#1F2C26;border-color:#2E5040}.num{background:var(--sage);color:#12241B}
 .term{background:#100F12}
+.reply,.sent{background:#33231D;border-color:#5A3A2D}
+.note a{color:#F6A98E}
+.reply .lbl{color:#F6A98E}
+.field{background:#242327;border-color:#33313A;color:#F1E9DC}
+.btn{color:#2A1610}
 }
 `;
 
@@ -136,8 +157,9 @@ function shell(inner: string): string {
 const HEADER = `<div class="brand rise"><img src="${AYO_LOGO_DATA_URI}" alt="Ayo" width="40" height="40"><span class="tag">a handoff for you</span></div>`;
 const FOOTER = `<div class="foot rise"><img src="${AYO_LOGO_DATA_URI}" alt=""> Sent with <a href="${REPO_URL}">Ayo</a> — attention pings from inside your terminal &amp; agents</div>`;
 
-/** Render a live handoff. Every `${}` is an escaped value or a constant. */
-export function renderHandoffPage(share: HandoffShare): string {
+/** Render a live handoff. Every `${}` is an escaped value or a constant.
+ *  `token` (url-safe by the route regex) names the reply form's POST target. */
+export function renderHandoffPage(share: HandoffShare, token: string): string {
   const name = share.from.name || share.from.handle;
   const from = escapeHtml(name);
   const handle = escapeHtml(share.from.handle);
@@ -184,6 +206,19 @@ export function renderHandoffPage(share: HandoffShare): string {
   }
   const cta = `<div class="cta rise"><div class="lbl">Pick this up</div><div class="cta-h">Grab ${from}'s work</div>${installStep}${joinBlock}</div>`;
 
+  // The conversion order is deliberate: reply FIRST (coral, zero-friction, no
+  // account), install second (sage). The `website` field is a honeypot — hidden
+  // from humans, and a submission that fills it is silently dropped.
+  const replyCard = `<div class="reply rise"><div class="lbl">Reply</div>
+    <div class="reply-h">Answer ${from} right here</div>
+    <div class="reply-sub">No account, no install — it lands in ${from}'s terminal.</div>
+    <form method="post" action="/h/${token}/reply">
+      <textarea class="field" name="message" required maxlength="2000" placeholder="on it — looking now…"></textarea>
+      <div class="hp" aria-hidden="true"><label>Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+      <div class="frow"><input class="field" type="text" name="name" maxlength="40" placeholder="Your name (shown to ${from})"><button class="btn" type="submit">Send reply</button></div>
+      <div class="hint">Delivered as "via ${from}'s handoff link" — never as a team member.</div>
+    </form></div>`;
+
   const body = `
     ${HEADER}
     <div class="eyebrow rise"><div class="avatar" aria-hidden="true">${escapeHtml(initials(name))}</div><div class="who"><b>${from}</b> <span class="h">@${handle}</span> handed off work to you<br>on <b>${team}</b></div></div>
@@ -192,7 +227,40 @@ export function renderHandoffPage(share: HandoffShare): string {
     ${noteCard}
     ${contextCard}
     ${diffCard}
+    ${replyCard}
     ${cta}
+    ${FOOTER}
+  `;
+  return shell(body);
+}
+
+/** The post-reply state — the warm conversion moment. The install ask lands
+ *  HERE, after they've gotten value, not before. */
+export function renderReplySentPage(share: HandoffShare, guestName: string): string {
+  const from = escapeHtml(share.from.name || share.from.handle);
+  const guest = escapeHtml(guestName);
+  const joinStep = share.joinCode
+    ? `<div class="step"><div class="num">2</div><div class="body"><div class="t">Join ${from}'s team</div><div class="term"><span class="code">ayo join <span class="code-em">${escapeHtml(share.joinCode)}</span></span></div></div></div>`
+    : "";
+  const body = `
+    ${HEADER}
+    <div class="sent rise"><div class="check">✓</div><div><div class="sent-h">Sent — ${from} will see it in their terminal</div><div class="sent-sub">Threaded to this handoff, from &ldquo;${guest} (via link)&rdquo;.</div></div></div>
+    <div class="cta rise"><div class="lbl">Keep the loop going</div><div class="cta-h">Want ${from}'s reply to land where <em>you</em> work?</div>
+      <div class="step"><div class="num">1</div><div class="body"><div class="t">Install Ayo — the conversation follows you into your terminal &amp; agents, with the code context attached</div><div class="term"><span class="code">${escapeHtml(INSTALL_CMD)}</span></div></div></div>
+      ${joinStep}
+    </div>
+    ${FOOTER}
+  `;
+  return shell(body);
+}
+
+/** A branded error page for the no-JS reply form — a human must never land on
+ *  raw JSON. Links back to the handoff so their context isn't a dead end. */
+export function renderReplyErrorPage(token: string, message: string): string {
+  const body = `
+    ${HEADER}
+    <div class="sent rise"><div class="check" style="background:#A63A1B">!</div><div><div class="sent-h">That didn't go through</div><div class="sent-sub">${escapeHtml(message)}</div></div></div>
+    <div class="card rise"><div class="note"><a href="/h/${token}">← Back to the handoff</a> — your reply isn't saved, so copy it before you retry.</div></div>
     ${FOOTER}
   `;
   return shell(body);

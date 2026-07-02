@@ -111,6 +111,11 @@ export class TeamHub implements DurableObject {
 
     const url = new URL(req.url);
     const path = url.pathname;
+    // INVARIANT (ADR 0002): the Worker is the only identity verifier and sets
+    // x-ayo-user/handle on every forwarded call — EXCEPT guest-reply, which
+    // deliberately sends blank identity (rememberMember below no-ops on blank,
+    // and that handler never reads these). Any new internal route must either
+    // require identity or be explicitly blank-safe like guest-reply.
     const userId = req.headers.get("x-ayo-user") as UserId;
     const handle = req.headers.get("x-ayo-handle") ?? "";
     await this.rememberMember(userId, handle);
@@ -121,6 +126,9 @@ export class TeamHub implements DurableObject {
     if (path === "/internal/register") return Response.json({ ok: true });
     if (path === "/internal/stream") return this.handleStream(userId, handle);
     if (path === "/internal/ayo" && req.method === "POST") return this.handleSend(req, userId, handle);
+    // Guest reply from a handoff share page: arrives with EMPTY x-ayo-user/handle
+    // (rememberMember above no-ops on blank identity — the roster stays clean).
+    if (path === "/internal/guest-reply" && req.method === "POST") return this.handleGuestReply(req);
     if (path === "/internal/inbox" && req.method === "GET") return this.handleInbox(url, userId, handle);
     if (path === "/internal/members" && req.method === "GET") return this.handleMembers();
     if (path === "/internal/feed" && req.method === "GET") return this.handleFeed(url);
@@ -390,6 +398,60 @@ export class TeamHub implements DurableObject {
   ): Promise<Response> {
     await this.advance(ayoId as Ayo["id"], userId, handle, next);
     return Response.json({ ok: true });
+  }
+
+  /**
+   * A guest reply from a handoff share page. The Worker (the only identity
+   * verifier) built the body from the SENDER's share snapshot — the guest chose
+   * only the text and their display name. The synthetic `from` is unmistakably
+   * a guest: it can never collide with a member (no member has this id), never
+   * joins the roster, and never breaks through focus (normal urgency).
+   */
+  private async handleGuestReply(req: Request): Promise<Response> {
+    const input = (await req.json().catch(() => null)) as {
+      to?: string;
+      guestName?: string;
+      message?: string;
+      replyTo?: string | null;
+    } | null;
+    const to = typeof input?.to === "string" ? input.to : "";
+    const message = typeof input?.message === "string" ? input.message.trim() : "";
+    const guestName = (typeof input?.guestName === "string" ? input.guestName.trim() : "").slice(0, 40) || "someone";
+    if (!to || !message || message.length > 4096) {
+      return apiError("bad_request", "A guest reply needs a recipient and 1–4096 characters.");
+    }
+    const teamId = req.headers.get("x-ayo-team") as Ayo["teamId"];
+    const ayo: Ayo = {
+      id: newAyoId(),
+      teamId,
+      from: { id: "user_guest" as UserId, handle: `${guestName} (via link)`, name: guestName },
+      to: [to],
+      kind: "ping",
+      body: message,
+      urgency: "normal",
+      replyTo: (input?.replyTo as Ayo["id"]) ?? null,
+      sound: null,
+      expiresAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    await this.ctx.storage.put(`msg:${ayo.id}`, ayo);
+    await this.env.AYO_KV.put(`ayoteam:${ayo.id}`, teamId, { expirationTtl: 60 * 60 * 24 * 30 });
+    // Deliver like any send: guest replies respect heads-down (no breakthrough).
+    const { recipients } = await this.resolveRecipients([to], "" as UserId);
+    for (const m of recipients) {
+      const sockets = this.socketsForUser(m.userId);
+      const focusing = m.status === "heads-down" || m.status === "dnd";
+      if (sockets.length === 0) {
+        await this.setDelivery(ayo.id, m.userId, "sent");
+      } else if (focusing) {
+        await this.setDelivery(ayo.id, m.userId, "held");
+      } else {
+        await this.setDelivery(ayo.id, m.userId, "sent");
+        const frame: ServerFrame = { t: "ayo", ayo };
+        for (const s of sockets) s.send(JSON.stringify(frame));
+      }
+    }
+    return Response.json({ ok: true, delivered: recipients.length });
   }
 
   /**

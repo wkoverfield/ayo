@@ -38,6 +38,8 @@ import {
   HANDOFF_LINK_TTL_HOURS,
   HANDOFF_LINK_MAX_TTL_HOURS,
   MAX_HANDOFF_SHARE_BYTES,
+  MAX_LINK_REPLY_LENGTH,
+  MAX_LINK_REPLY_NAME_LENGTH,
 } from "@ayo-dev/core";
 import { apiError, json, type Env } from "./env.js";
 import { overRateLimit, clientIp } from "./rate-limit.js";
@@ -54,6 +56,7 @@ import {
   addMember,
   countMembers,
   createTeam,
+  freshJoinCode,
   getMembership,
   getTeam,
   rotateJoinCode,
@@ -62,7 +65,7 @@ import {
   teamsForUser,
 } from "./directory.js";
 import { getHandoffShare, putHandoffShare } from "./handoff.js";
-import { renderHandoffPage, renderExpiredPage } from "./handoff-page.js";
+import { renderHandoffPage, renderExpiredPage, renderReplySentPage, renderReplyErrorPage } from "./handoff-page.js";
 import { createWebhook, deleteWebhook, getWebhook, listWebhooks } from "./hooks.js";
 import { verifyGithubSignature, mapGithubEvent } from "./github-webhook.js";
 import { urlSafeToken } from "./token.js";
@@ -98,23 +101,47 @@ export default {
       const shareMatch = path.match(/^\/h\/([A-Za-z0-9_-]{16,64})$/);
       if (shareMatch && req.method === "GET") {
         const share = await getHandoffShare(env, shareMatch[1]!);
-        const html = share ? renderHandoffPage(share) : renderExpiredPage();
-        return new Response(html, {
-          status: share ? 200 : 404,
-          headers: {
-            "content-type": "text/html; charset=utf-8",
-            // `private` so no shared/CDN cache can serve a link past its KV expiry
-            // (min TTL is 60s); each token is unique so shared caching buys nothing.
-            "cache-control": share ? "private, max-age=30" : "no-store",
-            // CSP: no scripts (defense in depth atop escapeHtml on a public page
-            // rendering arbitrary content). Styles inline + Google Fonts CSS; font
-            // files from gstatic; images only the embedded data-URI logo. Unframeable.
-            "content-security-policy":
-              "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
-            "x-content-type-options": "nosniff",
-            "referrer-policy": "no-referrer",
-          },
-        });
+        const html = share ? renderHandoffPage(share, shareMatch[1]!) : renderExpiredPage();
+        return sharePage(html, share ? 200 : 404, !!share);
+      }
+
+      // ── Anonymous reply from a handoff page (no session — the conversion
+      //    moment: they reply FIRST, the install ask comes after) ───────────
+      const replyMatch = path.match(/^\/h\/([A-Za-z0-9_-]{16,64})\/reply$/);
+      if (replyMatch && req.method === "POST") {
+        // Public write: IP cap FIRST (pre-KV), then per-token.
+        if (await overRateLimit(env, `reply-ip:${clientIp(req)}`, 10, 60)) {
+          return apiError("rate_limited", "Too many replies from this address — give it a minute.");
+        }
+        const token = replyMatch[1]!;
+        const share = await getHandoffShare(env, token);
+        if (!share) return sharePage(renderExpiredPage(), 404, false);
+        const form = await req.formData().catch(() => null);
+        const message = (form?.get("message") ?? "").toString().trim();
+        const name = (form?.get("name") ?? "").toString().trim().slice(0, MAX_LINK_REPLY_NAME_LENGTH) || "someone";
+        // Honeypot: a hidden field humans never see. Bots that fill it get a
+        // convincing success page and nothing is sent.
+        const honeypot = (form?.get("website") ?? "").toString();
+        if (honeypot) return sharePage(renderReplySentPage(share, name), 200, false);
+        // A browser is on the other end of this form — every failure renders a
+        // branded page with a way back, never the API's JSON contract.
+        if (!message || message.length > MAX_LINK_REPLY_LENGTH) {
+          return sharePage(renderReplyErrorPage(token, `A reply needs 1–${MAX_LINK_REPLY_LENGTH} characters.`), 400, false);
+        }
+        if (await overRateLimit(env, `reply:${token}`, 5, 60)) {
+          return sharePage(renderReplyErrorPage(token, "This handoff is getting a lot of replies — wait a minute and try again."), 429, false);
+        }
+        const res = await sendGuestReply(env, share, name, message);
+        if (!res.ok) {
+          return sharePage(renderReplyErrorPage(token, "Something went wrong on our side — try again in a moment."), 502, false);
+        }
+        // Truthful to the GUEST too: a reply that resolved to no recipient (the
+        // sender left the team / renamed) must not show a fake "Sent ✓".
+        if (res.delivered === 0) {
+          console.warn(`guest reply undeliverable: share sender ${share.from.handle} not on roster (team ${share.teamId})`);
+          return sharePage(renderReplyErrorPage(token, `${share.from.name || share.from.handle} doesn't seem to be reachable on this team anymore.`), 410, false);
+        }
+        return sharePage(renderReplySentPage(share, name), 200, false);
       }
 
       // ── Inbound webhook (no session — "one curl → Ayo") ─────────────────
@@ -308,6 +335,10 @@ export default {
         if (!team) return apiError("team_not_found", "No team with that join code.");
         const user = await loadUser(env, userId);
         if (!user) return apiError("invalid_token", "Session user not found.");
+        // A code minted for a handoff link carries its inviter — the joiner
+        // lands in a relationship, not an empty room.
+        const invitedBy =
+          typeof code === "string" ? ((await env.AYO_KV.get(`codeinviter:${code.toUpperCase()}`)) ?? undefined) : undefined;
         // Idempotent: a repeat join (same valid code) is a no-op, so it can't be
         // used to hammer the team DO with register calls.
         if (!(await getMembership(env, team.id, userId))) {
@@ -318,7 +349,7 @@ export default {
           await addMember(env, { teamId: team.id, userId, handle: user.handle });
           ctx.waitUntil(registerInRoster(env, team.id, userId, user.handle));
         }
-        const body: JoinTeamResponse = { id: team.id, name: team.name, joinCode: team.joinCode };
+        const body: JoinTeamResponse = { id: team.id, name: team.name, joinCode: team.joinCode, invitedBy };
         return json(body);
       }
 
@@ -389,20 +420,32 @@ export default {
         const ttl = Math.max(Math.round(wantHrs * 3600), 60);
         const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
         const embedCode = input.includeJoinCode !== false;
+        // Per-LINK join code: minted fresh, expires with the link (KV TTL), and
+        // carries the inviter — so rotating the team code never kills a live
+        // link, and the joiner learns who invited them.
+        let linkCode: string | undefined;
+        if (embedCode) {
+          linkCode = await freshJoinCode(env);
+          await env.AYO_KV.put(`joincode:${linkCode}`, team.id, { expirationTtl: ttl });
+          await env.AYO_KV.put(`codeinviter:${linkCode}`, membership.handle, { expirationTtl: ttl });
+        }
         // Strip cwd: it's an absolute local path (username, filesystem layout) that
         // the public page never renders — keep it off the public artifact entirely.
         const context = input.context ? { ...input.context, cwd: undefined } : undefined;
         const share: HandoffShare = {
           v: 1,
           from: { handle: membership.handle, name: user.name },
+          // Routing for the reply flow — stored, never rendered.
+          teamId,
+          fromId: userId as never,
+          ayoId: typeof input.ayoId === "string" && input.ayoId.startsWith("ayo_") ? input.ayoId : undefined,
           teamName: team.name,
           blocker: input.blocker,
           note: input.note,
           context,
-          // Default: embed the join code (frictionless conversion). Opt out per-link.
-          joinCode: embedCode ? team.joinCode : undefined,
-          // Snapshot the code's own expiry so the page can flag a stale code.
-          joinCodeExpiresAt: embedCode ? team.codeExpiresAt ?? null : undefined,
+          joinCode: linkCode,
+          // The link code lives exactly as long as the link.
+          joinCodeExpiresAt: embedCode ? expiresAt : undefined,
           createdAt: new Date().toISOString(),
           expiresAt,
         };
@@ -541,6 +584,62 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Response wrapper for every public /h/* page: consistent cache + CSP headers.
+ *  form-action 'self' (not 'none') so the no-JS reply form can POST back;
+ *  scripts remain fully blocked via default-src 'none'. */
+function sharePage(html: string, status: number, cacheable: boolean): Response {
+  return new Response(html, {
+    status,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      // `private` so no shared/CDN cache serves past the KV expiry (min TTL 60s);
+      // POST results are never cached.
+      "cache-control": cacheable ? "private, max-age=30" : "no-store",
+      "content-security-policy":
+        "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
+    },
+  });
+}
+
+/**
+ * Deliver an anonymous handoff-page reply into the sender's inbox. The guest is
+ * NOT a member: x-ayo-user/handle are deliberately EMPTY (the DO's
+ * rememberMember no-ops on blank identity, so the roster is never polluted) and
+ * the synthetic `from` is unmistakably a guest. Routing comes from the share
+ * snapshot the SENDER minted — the guest controls only the text and their name.
+ */
+async function sendGuestReply(
+  env: Env,
+  share: HandoffShare,
+  guestName: string,
+  message: string,
+): Promise<{ ok: boolean; delivered: number }> {
+  try {
+    const stub = env.TEAM.get(env.TEAM.idFromName(share.teamId));
+    const headers = new Headers({ "content-type": "application/json", "x-ayo-team": share.teamId });
+    if (env.INTERNAL_SECRET) headers.set("x-ayo-internal", env.INTERNAL_SECRET);
+    const res = await stub.fetch(
+      new Request("https://team/internal/guest-reply", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          to: share.from.handle,
+          guestName,
+          message,
+          replyTo: share.ayoId ?? null,
+        }),
+      }),
+    );
+    if (!res.ok) return { ok: false, delivered: 0 };
+    const body = (await res.json().catch(() => ({}))) as { delivered?: number };
+    return { ok: true, delivered: typeof body.delivered === "number" ? body.delivered : 0 };
+  } catch {
+    return { ok: false, delivered: 0 };
+  }
+}
 
 /**
  * Send an Ayo into a team DO under a member's identity, from a body the Worker

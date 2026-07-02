@@ -179,16 +179,18 @@ install→join CTA (embeds the team join code by default; opt out with
 snapshot is self-contained in KV (`share:<token>`), so the render path never
 touches the team DO. Strict CSP + full HTML escaping on the public page.
 
-**Deferred (S1b) — anonymous reply-back.** The deepest Loom hook is letting a
-NON-user reply/claim from the page and having it land in the sender's inbox
-(recipient→creator pull). Deferred because it needs (a) an injected DO identity
-for a sender who isn't a roster member — today `team-do.ts` `rememberMember()`
-runs on every internal call, so a synthetic "via-link" sender would pollute the
-roster — and (b) a public unauthenticated write endpoint = an abuse surface
-(spam to inboxes) needing its own rate-limit + captcha/proof-of-work thinking.
-Path when we build it: a `/h/<token>/reply` public route → a dedicated DO
-internal endpoint that stores a reply Ayo with a snapshot `from` WITHOUT
-roster-registering it, tightly rate-limited by IP + per-token.
+**Shipped (S1b, PR #44) — anonymous reply-back.** A non-user replies right
+from the page (no-JS form POST to `/h/<token>/reply`); it lands in the sender's
+inbox threaded to the handoff, from a guest identity that never touches the
+roster (blank `x-ayo` identity → `rememberMember` no-ops). Reply-first,
+install-second; branded error pages on every human-reachable failure; honest
+410 when the sender is no longer reachable. Per-link join codes carry the
+inviter (`JoinTeamResponse.invitedBy`).
+
+Remaining edges (deliberate, low-severity): the per-IP reply cap still returns
+JSON (fires pre-KV, mirrors the other public routes; a shared-NAT human could
+see it); a malformed DO response would render the 410 page rather than the 502
+(unreachable today — the DO only emits a fixed shape).
 
 ## Inbound webhooks (S3) — deferred hardening
 
@@ -253,3 +255,11 @@ Not wired, and blocked on two things:
 Lower priority: a team member already gets full context in their inbox/agent —
 the page is the non-user conversion surface, so toast→page is mostly redundant
 for members. Revisit once the Apple Developer ID / notarization is sorted.
+
+## Guest-reply threading in the CLI (copy-vs-capability)
+
+Guest replies from a handoff page carry `replyTo` (the handoff's ayoId) and
+agents see it via `read_inbox` (raw JSON), but the CLI inbox renders replies as
+flat pings — no visual tie back to the handoff. Surface the thread in `ayo
+inbox` (e.g. "↳ re: your handoff 'oauth is cooked…'") so the confirmation
+page's "threaded" claim is visible to humans, not just agents.
