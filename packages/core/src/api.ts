@@ -94,7 +94,14 @@ export interface JoinTeamResponse {
   /** Lets a fresh joiner re-invite without a round-trip. Optional for safe API
    *  evolution (an older relay won't send it; callers use `ayo invite` anyway). */
   joinCode?: string;
+  /** Set when the code came from a handoff link — the joiner lands in a
+   *  relationship, not an empty room ("Maya invited you"). */
+  invitedBy?: Handle;
 }
+
+/** Bounds for an anonymous reply from a handoff share page. */
+export const MAX_LINK_REPLY_LENGTH = 2000;
+export const MAX_LINK_REPLY_NAME_LENGTH = 40;
 
 /** `GET /v1/teams/:id/invite` — the active team's shareable invite (members only). */
 export interface InviteResponse {
@@ -143,10 +150,12 @@ export interface CreateHandoffLinkRequest {
   context?: AyoContext;
   /** Auto-expire after N hours; clamped to [~1 min, HANDOFF_LINK_MAX_TTL_HOURS]. */
   expiresInHours?: number;
-  /** Embed the team's join code so a non-user installs → joins in one step.
-   *  Default true — frictionless conversion is the point, and both the link and
-   *  the code expire (the code is also rotatable; see MAX_TEAM_SIZE / S5). */
+  /** Embed a join code so a non-user installs → joins in one step. Default true.
+   *  The embedded code is PER-LINK (minted fresh, expires with the link, carries
+   *  the inviter) — rotating the team code never kills a live handoff link. */
   includeJoinCode?: boolean;
+  /** The handoff Ayo this link renders — replies from the page thread to it. */
+  ayoId?: AyoId;
 }
 
 export interface CreateHandoffLinkResponse {
@@ -158,10 +167,17 @@ export interface CreateHandoffLinkResponse {
 }
 
 /** The self-contained snapshot a share link renders. Everything the public page
- *  needs, so the render path never touches the team DO. `v` guards the shape. */
+ *  needs, so the render path never touches the team DO. `v` guards the shape.
+ *  teamId/fromId/ayoId are ROUTING fields for the reply flow — stored, never
+ *  rendered on the public page. */
 export interface HandoffShare {
   v: 1;
   from: { handle: Handle; name: string };
+  /** Routing (reply → the sender's inbox); never rendered. */
+  teamId: TeamId;
+  fromId: UserId;
+  /** The handoff Ayo this link renders; replies thread to it. */
+  ayoId?: AyoId;
   teamName: string;
   blocker: string;
   note?: string;

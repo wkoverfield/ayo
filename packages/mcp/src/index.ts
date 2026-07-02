@@ -148,7 +148,7 @@ server.tool(
     // handoff already sent, so a link failure must not fail the tool call.
     if (link !== false) {
       try {
-        const l = await relay.createHandoffLink(auth, { blocker, note, context: rawCtx, includeJoinCode });
+        const l = await relay.createHandoffLink(auth, { blocker, note, context: rawCtx, includeJoinCode, ayoId: res.id });
         out += `\nShare link (works before they're on Ayo): ${l.url}`;
       } catch (err) {
         out += `\n(couldn't mint a share link: ${err instanceof Error ? err.message : "unknown"})`;

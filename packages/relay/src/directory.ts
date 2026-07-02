@@ -43,7 +43,7 @@ function joinCode(): string {
  * get and the caller's put could still let two teams pick the same code. Given the
  * ~1-in-30^6 odds we accept that (vanishing) residual risk rather than loop/lock.
  */
-async function freshJoinCode(env: Env): Promise<string> {
+export async function freshJoinCode(env: Env): Promise<string> {
   const first = joinCode();
   if ((await env.AYO_KV.get(`joincode:${first}`)) === null) return first;
   return joinCode();

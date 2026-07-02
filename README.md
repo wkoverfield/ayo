@@ -170,10 +170,11 @@ ayo handoff maya "stuck on the oauth callback"
 ```
 
 Drop it in a text, a PR comment, wherever. Whoever opens it gets your full
-context and a one-step "install → join → pick this up" path (the join code is
-embedded by default; `--no-code` shares context without granting access, or
-`--no-link` skips the link entirely). It's the fastest way to pull a teammate
-_in_.
+context — and can **reply right from the page**, no account, no install: their
+answer lands in your terminal, threaded to the handoff. The install ask comes
+after they've replied, and the embedded join code names you as the inviter
+(`--no-code` shares context without granting access; `--no-link` skips the
+link entirely). It's the fastest way to pull a teammate _in_.
 
 ## Bring the outside in
 

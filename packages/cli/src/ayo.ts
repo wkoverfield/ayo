@@ -238,6 +238,9 @@ program
       const res = await api.joinTeam(s, code);
       saveConfig({ ...loadConfig(), activeTeamId: res.id });
       console.log(pc.green(`✓ joined ${pc.bold(res.name)}`));
+      if (res.invitedBy) {
+        console.log(`  ${pc.bold(res.invitedBy)} invited you — try:  ${pc.cyan(`ayo ${res.invitedBy} "picked up your handoff"`)}`);
+      }
       // Land the joiner on the team — who's here + the obvious next moves —
       // instead of a bare "joined". The roster is a nicety; the join succeeded.
       try {
@@ -837,6 +840,7 @@ program
           const link = await api.createHandoffLink(s, cfg.activeTeamId, {
             blocker: body,
             context: ctx,
+            ayoId: res.id, // replies from the page thread back to this handoff
             expiresInHours: Number.isFinite(hrs) ? hrs : undefined,
             // Commander: `--no-code` sets opts.code=false. Default (undefined/true)
             // lets the relay embed the code; false explicitly omits it.
