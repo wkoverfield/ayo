@@ -173,7 +173,7 @@ team
       for (const m of members) {
         const dot = m.online ? pc.green("●") : pc.dim("○");
         const note = m.statusText ? pc.dim(` — ${m.statusText}`) : "";
-        console.log(`${dot} ${pc.bold(m.handle)} ${pc.dim(`(${m.status})`)}${note}`);
+        console.log(`${dot} ${pc.bold(m.handle)} ${pc.dim(`(${m.online ? m.status : "offline"})`)}${note}`);
       }
     } catch (err) {
       fail(err);
