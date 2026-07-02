@@ -111,6 +111,11 @@ export class TeamHub implements DurableObject {
 
     const url = new URL(req.url);
     const path = url.pathname;
+    // INVARIANT (ADR 0002): the Worker is the only identity verifier and sets
+    // x-ayo-user/handle on every forwarded call — EXCEPT guest-reply, which
+    // deliberately sends blank identity (rememberMember below no-ops on blank,
+    // and that handler never reads these). Any new internal route must either
+    // require identity or be explicitly blank-safe like guest-reply.
     const userId = req.headers.get("x-ayo-user") as UserId;
     const handle = req.headers.get("x-ayo-handle") ?? "";
     await this.rememberMember(userId, handle);

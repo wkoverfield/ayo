@@ -253,3 +253,11 @@ Not wired, and blocked on two things:
 Lower priority: a team member already gets full context in their inbox/agent —
 the page is the non-user conversion surface, so toast→page is mostly redundant
 for members. Revisit once the Apple Developer ID / notarization is sorted.
+
+## Guest-reply threading in the CLI (copy-vs-capability)
+
+Guest replies from a handoff page carry `replyTo` (the handoff's ayoId) and
+agents see it via `read_inbox` (raw JSON), but the CLI inbox renders replies as
+flat pings — no visual tie back to the handoff. Surface the thread in `ayo
+inbox` (e.g. "↳ re: your handoff 'oauth is cooked…'") so the confirmation
+page's "threaded" claim is visible to humans, not just agents.

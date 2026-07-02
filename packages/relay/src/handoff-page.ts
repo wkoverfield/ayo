@@ -80,6 +80,7 @@ h1{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:26px;l
 .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:17px 19px;margin:15px 0;box-shadow:0 1px 2px rgba(42,46,69,.035)}
 .lbl{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:11px}
 .note{white-space:pre-wrap;font-size:14.5px;color:#33374B;line-height:1.62}
+.note a{color:#A63A1B;font-weight:500}
 .meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 code{font-family:var(--mono)}
 .chip{font-family:var(--mono);font-size:12.5px;padding:5px 10px;border-radius:8px;background:var(--coral-bg);color:#A63A1B;font-weight:500;max-width:100%;word-break:break-all}
@@ -133,6 +134,7 @@ textarea.field{min-height:72px;resize:vertical}
 .cta{background:#1F2C26;border-color:#2E5040}.num{background:var(--sage);color:#12241B}
 .term{background:#100F12}
 .reply,.sent{background:#33231D;border-color:#5A3A2D}
+.note a{color:#F6A98E}
 .reply .lbl{color:#F6A98E}
 .field{background:#242327;border-color:#33313A;color:#F1E9DC}
 .btn{color:#2A1610}
@@ -247,6 +249,18 @@ export function renderReplySentPage(share: HandoffShare, guestName: string): str
       <div class="step"><div class="num">1</div><div class="body"><div class="t">Install Ayo — the conversation follows you into your terminal &amp; agents, with the code context attached</div><div class="term"><span class="code">${escapeHtml(INSTALL_CMD)}</span></div></div></div>
       ${joinStep}
     </div>
+    ${FOOTER}
+  `;
+  return shell(body);
+}
+
+/** A branded error page for the no-JS reply form — a human must never land on
+ *  raw JSON. Links back to the handoff so their context isn't a dead end. */
+export function renderReplyErrorPage(token: string, message: string): string {
+  const body = `
+    ${HEADER}
+    <div class="sent rise"><div class="check" style="background:#A63A1B">!</div><div><div class="sent-h">That didn't go through</div><div class="sent-sub">${escapeHtml(message)}</div></div></div>
+    <div class="card rise"><div class="note"><a href="/h/${token}">← Back to the handoff</a> — your reply isn't saved, so copy it before you retry.</div></div>
     ${FOOTER}
   `;
   return shell(body);

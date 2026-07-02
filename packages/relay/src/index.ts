@@ -65,7 +65,7 @@ import {
   teamsForUser,
 } from "./directory.js";
 import { getHandoffShare, putHandoffShare } from "./handoff.js";
-import { renderHandoffPage, renderExpiredPage, renderReplySentPage } from "./handoff-page.js";
+import { renderHandoffPage, renderExpiredPage, renderReplySentPage, renderReplyErrorPage } from "./handoff-page.js";
 import { createWebhook, deleteWebhook, getWebhook, listWebhooks } from "./hooks.js";
 import { verifyGithubSignature, mapGithubEvent } from "./github-webhook.js";
 import { urlSafeToken } from "./token.js";
@@ -123,14 +123,24 @@ export default {
         // convincing success page and nothing is sent.
         const honeypot = (form?.get("website") ?? "").toString();
         if (honeypot) return sharePage(renderReplySentPage(share, name), 200, false);
+        // A browser is on the other end of this form — every failure renders a
+        // branded page with a way back, never the API's JSON contract.
         if (!message || message.length > MAX_LINK_REPLY_LENGTH) {
-          return apiError("bad_request", `A reply needs 1–${MAX_LINK_REPLY_LENGTH} characters.`);
+          return sharePage(renderReplyErrorPage(token, `A reply needs 1–${MAX_LINK_REPLY_LENGTH} characters.`), 400, false);
         }
         if (await overRateLimit(env, `reply:${token}`, 5, 60)) {
-          return apiError("rate_limited", "This handoff is getting a lot of replies — try again in a minute.");
+          return sharePage(renderReplyErrorPage(token, "This handoff is getting a lot of replies — wait a minute and try again."), 429, false);
         }
         const res = await sendGuestReply(env, share, name, message);
-        if (!res.ok) return apiError("internal_error", "Couldn't deliver the reply — try again.");
+        if (!res.ok) {
+          return sharePage(renderReplyErrorPage(token, "Something went wrong on our side — try again in a moment."), 502, false);
+        }
+        // Truthful to the GUEST too: a reply that resolved to no recipient (the
+        // sender left the team / renamed) must not show a fake "Sent ✓".
+        if (res.delivered === 0) {
+          console.warn(`guest reply undeliverable: share sender ${share.from.handle} not on roster (team ${share.teamId})`);
+          return sharePage(renderReplyErrorPage(token, `${share.from.name || share.from.handle} doesn't seem to be reachable on this team anymore.`), 410, false);
+        }
         return sharePage(renderReplySentPage(share, name), 200, false);
       }
 
@@ -606,7 +616,7 @@ async function sendGuestReply(
   share: HandoffShare,
   guestName: string,
   message: string,
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; delivered: number }> {
   try {
     const stub = env.TEAM.get(env.TEAM.idFromName(share.teamId));
     const headers = new Headers({ "content-type": "application/json", "x-ayo-team": share.teamId });
@@ -623,9 +633,11 @@ async function sendGuestReply(
         }),
       }),
     );
-    return { ok: res.ok };
+    if (!res.ok) return { ok: false, delivered: 0 };
+    const body = (await res.json().catch(() => ({}))) as { delivered?: number };
+    return { ok: true, delivered: typeof body.delivered === "number" ? body.delivered : 0 };
   } catch {
-    return { ok: false };
+    return { ok: false, delivered: 0 };
   }
 }
 
