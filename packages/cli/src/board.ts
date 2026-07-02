@@ -61,7 +61,12 @@ function render(team: string, members: MemberPresence[], items: FeedItem[], hack
     const handle = pc.bold(m.handle.padEnd(11));
     const ctx = ctxByHandle.get(m.handle);
     const where = ctx?.repo ? pc.blue(`${ctx.repo}@${ctx.branch ?? "?"}`) : pc.dim("—");
-    const status = m.statusText ? pc.cyan(`"${truncate(m.statusText, 28)}"`) : pc.dim(m.status);
+    // The status WORD is their availability setting (active/heads-down/…) — for
+    // someone who isn't connected, showing "active" reads as a lie next to the
+    // offline dot. Offline + no note = just say offline; a note stays useful.
+    const status = m.statusText
+      ? pc.cyan(`"${truncate(m.statusText, 28)}"`)
+      : pc.dim(m.online ? m.status : "offline");
     const when = lastSeen.has(m.handle) ? pc.dim(rel(lastSeen.get(m.handle)!).padStart(4)) : pc.dim("    ");
     out.push(`  ${dot} ${handle} ${when}  ${where}  ${status}`);
   }
@@ -84,7 +89,11 @@ function render(team: string, members: MemberPresence[], items: FeedItem[], hack
     out.push(`    ${pc.dim(rel(a.createdAt).padStart(4))}  ${pc.cyan(a.from.handle)} ${icon} ${truncate(a.body, 42)}`);
   }
 
-  out.push("", `  ${pc.dim(`↻ every ${REFRESH_MS / 1000}s · q or Ctrl-C to quit`)}`);
+  // The board shows TEAM activity only (broadcasts + handoffs) — say so, or a
+  // person who just received a DM/reply stares at the board wondering where it
+  // went (it's in their inbox, on purpose).
+  out.push("", `  ${pc.dim("1:1 pings & replies stay private — they're in `ayo inbox`")}`);
+  out.push(`  ${pc.dim(`↻ every ${REFRESH_MS / 1000}s · q or Ctrl-C to quit`)}`);
   return out.join("\n");
 }
 
