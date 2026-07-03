@@ -4,6 +4,7 @@
  */
 
 import { homedir } from "node:os";
+import pc from "picocolors";
 import { join, resolve } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { DEFAULT_RELAY_URL } from "@ayo-dev/core";
@@ -73,7 +74,7 @@ export function saveSession(s: Session): void {
 export function requireSession(): Session {
   const s = loadSession();
   if (!s) {
-    console.error("Not logged in. Run `ayo login` first.");
+    console.error(pc.red("✗ not logged in") + pc.dim("  — run `ayo login` first"));
     process.exit(1);
   }
   return s;

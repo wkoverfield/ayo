@@ -127,6 +127,12 @@ function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: bo
   if (unknown.length) {
     const names = unknown.map((h) => pc.bold(h)).join(", ");
     console.log(pc.yellow(`⚠ no such teammate: ${names}`) + pc.dim("  — run `ayo who` to see who you can ping"));
+    // `ayo answr 1 ship` lands here (near-miss WITH args skips the bare typo
+    // guard) — being told "answr isn't a teammate" steers at the wrong fix.
+    const near = unknown
+      .map((h) => HELP_ORDER.find((c) => levenshtein(h.toLowerCase(), c) <= 2))
+      .find(Boolean);
+    if (near) console.log(pc.dim(`  (or did you mean the command \`ayo ${near}\`?)`));
   }
   if (held.length) {
     const names = held.join(", ");
@@ -895,7 +901,7 @@ Examples:
         urgency: opts.urgent ? "urgent" : "normal",
         context: ctx,
       });
-      reportSend(res, { label: "handoff sent" });
+      reportSend(res, { label: "handoff sent", broadcast });
       if (ctx?.repo) {
         const bits = [`${ctx.repo}@${ctx.branch ?? "?"}`, `${ctx.changedFiles?.length ?? 0} changed`];
         if (ctx.diff) bits.push("full diff");
@@ -949,7 +955,7 @@ program
         // command) — a bare near-miss of a command name is a typo, not a ping.
         const near = HELP_ORDER.find((c) => levenshtein(target.toLowerCase(), c) <= 2);
         if (near) {
-          console.error(pc.yellow(`Unknown command '${target}' — did you mean \`ayo ${near}\`?`));
+          console.error(pc.yellow(`⚠ unknown command '${target}'`) + pc.dim(` — did you mean \`ayo ${near}\`?`));
           return void (process.exitCode = 1);
         }
         return void console.log("Nothing to send. `ayo <handle> <message>`");
