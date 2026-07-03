@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="docs/ayo-logo.png" alt="Ayo" width="120">
-
-# Ayo
+<img src="docs/hero.png" alt="Ayo: reach a teammate without leaving your terminal or your agent. Ping them, or hand off your work with its git context." width="840">
 
 [![CI](https://github.com/wkoverfield/ayo/actions/workflows/ci.yml/badge.svg)](https://github.com/wkoverfield/ayo/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@ayo-dev/cli)](https://www.npmjs.com/package/@ayo-dev/cli)
