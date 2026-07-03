@@ -6,7 +6,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { Command } from "commander";
+import { Command, Help } from "commander";
 import pc from "picocolors";
 import {
   AYO_DIR,
@@ -49,11 +49,66 @@ function pkgVersion(): string {
 
 const program = new Command();
 program.name("ayo").description("Ping your teammates from inside Codex and Claude.").version(pkgVersion());
+program.showSuggestionAfterError(true);
+
+// Help lists everyday commands before plumbing — beloved CLIs teach the primary
+// gesture first; registration order is code organization, not importance.
+const HELP_ORDER = [
+  "init", "handoff", "inbox", "agents", "answer", "board", "status", "who",
+  "team", "invite", "join", "hook", "sound", "hackathon",
+  "doctor", "daemon", "hooks", "mcp", "login", "uninstall", "help",
+];
+program.configureHelp({
+  visibleCommands(cmd) {
+    const rank = (n: string) => {
+      const i = HELP_ORDER.indexOf(n);
+      return i === -1 ? HELP_ORDER.length : i;
+    };
+    // Reuse commander's own hidden-filtering, then impose the teaching order.
+    const visible = Help.prototype.visibleCommands.call(this, cmd);
+    return visible.sort((a, b) => rank(a.name()) - rank(b.name()));
+  },
+});
+
+// The primary gesture is a hidden default command (`ayo <handle> <message>`)
+// so without this block a new user reading --help never learns the core move.
+program.addHelpText(
+  "after",
+  `
+Examples:
+  ayo maya "demo deploy is cooked, can you tap in?"    ping one person
+  ayo team "standup in 5"                              broadcast to everyone
+  ayo handoff maya "stuck on oauth"                    hand off with git context + a share link
+  ayo agents                                           which asks are waiting on you
+  ayo board                                            live team dashboard
+
+Docs: https://github.com/wkoverfield/ayo`,
+);
 
 function fail(err: unknown): never {
   if (err instanceof RelayError) console.error(pc.red(`✗ ${err.code}: ${err.message}`));
   else console.error(pc.red(`✗ ${(err as Error).message}`));
   process.exit(1);
+}
+
+/** Tiny edit-distance for did-you-mean on bare near-miss commands. */
+function levenshtein(a: string, b: string): number {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) dp[0]![j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i]![j] = Math.min(dp[i - 1]![j]! + 1, dp[i]![j - 1]! + 1, dp[i - 1]![j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return dp[a.length]![b.length]!;
+}
+
+/** "No active team" is a user-fixable error, not a success: say so on stderr,
+ *  name the fix, and exit non-zero (scripts and agents depend on exit codes). */
+function requireTeam(cfg: ReturnType<typeof loadConfig>): string {
+  if (!cfg.activeTeamId) {
+    console.error(pc.red("✗ no active team") + pc.dim("  — create one with `ayo team create <name>` or join with `ayo join <code>`"));
+    process.exit(1);
+  }
+  return cfg.activeTeamId;
 }
 
 /**
@@ -92,6 +147,10 @@ function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: bo
     );
   }
   // (reached 0 AND unknown.length > 0 — the warning above already explained it.)
+  // A DIRECTED send that reached no one is a failure to a script or an agent,
+  // even though the human got a readable warning above. Broadcasts to an empty
+  // room stay exit-0 (nothing was mis-addressed).
+  if (!opts.broadcast && live + queued + held.length === 0) process.exitCode = 1;
 }
 
 // ── init / login / uninstall ─────────────────────────────────────────────────
@@ -164,12 +223,14 @@ team
 team
   .command("status")
   .description("Show team roster + presence")
-  .action(async () => {
+  .option("--json", "raw JSON for agents", false)
+  .action(async (opts) => {
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team.");
-      const { members } = await api.members(s, cfg.activeTeamId);
+      const teamId = requireTeam(cfg);
+      const { members } = await api.members(s, teamId);
+      if (opts.json) return void console.log(JSON.stringify(members, null, 2));
       for (const m of members) {
         const dot = m.online ? pc.green("●") : pc.dim("○");
         const note = m.statusText ? pc.dim(` — ${m.statusText}`) : "";
@@ -187,9 +248,9 @@ team
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team.");
+      const teamId = requireTeam(cfg);
       const hrs = opts.expires ? Number(opts.expires) : undefined;
-      const res = await api.rotateCode(s, cfg.activeTeamId, hrs);
+      const res = await api.rotateCode(s, teamId, hrs);
       console.log(
         pc.green("✓ new join code: ") +
           pc.bold(pc.cyan(res.joinCode)) +
@@ -210,13 +271,13 @@ team
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      const teamId = requireTeam(cfg);
       const body = message.join(" ");
       if (!body) {
         console.log("Usage: ayo team <message>  ·  ayo team create <name>  ·  ayo team status");
         return;
       }
-      const res = await api.send(s, cfg.activeTeamId, {
+      const res = await api.send(s, teamId, {
         to: ["*"],
         body,
         urgency: opts.urgent ? "urgent" : "normal",
@@ -268,8 +329,8 @@ program
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
-      const { name, joinCode, codeExpiresAt } = await api.invite(s, cfg.activeTeamId);
+      const teamId = requireTeam(cfg);
+      const { name, joinCode, codeExpiresAt } = await api.invite(s, teamId);
       // Don't hand out a dead code: if it's already expired, tell the inviter to
       // rotate instead of pasting an invitation nobody can redeem.
       if (codeExpiresAt && new Date(codeExpiresAt).getTime() < Date.now()) {
@@ -309,11 +370,11 @@ hook
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      const teamId = requireTeam(cfg);
       if (opts.github && opts.to) {
         console.log(pc.yellow("⚠ --to is ignored for GitHub webhooks — recipients come from the event (reviewer, mentioned, author)."));
       }
-      const info = await api.createWebhook(s, cfg.activeTeamId, {
+      const info = await api.createWebhook(s, teamId, {
         label: opts.label ?? (opts.github ? "github" : "hook"),
         to: opts.github || !opts.to ? undefined : resolveHandle(cfg, opts.to),
         github: opts.github || undefined,
@@ -351,8 +412,8 @@ hook
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team.");
-      const { hooks } = await api.listWebhooks(s, cfg.activeTeamId);
+      const teamId = requireTeam(cfg);
+      const { hooks } = await api.listWebhooks(s, teamId);
       if (!hooks.length) return console.log(pc.dim("No webhooks yet. `ayo hook create`."));
       for (const h of hooks) {
         const scope = h.kind === "github" ? pc.dim(" (github)") : h.to ? ` → ${h.to}` : " → team";
@@ -371,7 +432,7 @@ hook
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team.");
+      const teamId = requireTeam(cfg);
       // Accept a full URL (with any query/trailing slash) or a bare token.
       let t = token;
       if (token.includes("/")) {
@@ -381,7 +442,7 @@ hook
           t = token.split("/").filter(Boolean).pop() ?? token;
         }
       }
-      await api.revokeWebhook(s, cfg.activeTeamId, t);
+      await api.revokeWebhook(s, teamId, t);
       console.log(pc.green("✓ webhook revoked"));
     } catch (err) {
       fail(err);
@@ -407,8 +468,8 @@ program
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team.");
-      const { ayos } = await api.inbox(s, cfg.activeTeamId, undefined, false);
+      const teamId = requireTeam(cfg);
+      const { ayos } = await api.inbox(s, teamId, undefined, false);
       const now = Date.now();
       const waiting = ayos.filter(
         (a) =>
@@ -417,7 +478,7 @@ program
           (!a.expiresAt || new Date(a.expiresAt).getTime() > now),
       );
       if (opts.json) return void console.log(JSON.stringify(waiting, null, 2));
-      if (!waiting.length) return void console.log(pc.dim("nothing waiting on you ✨"));
+      if (!waiting.length) return void console.log(pc.dim("nothing waiting on you"));
       waiting.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)); // longest-waiting first
       console.log(pc.bold("\n  ⧗ waiting on you") + pc.dim(`   ${waiting.length} blocked`));
       console.log(pc.dim("  " + "─".repeat(60)));
@@ -451,6 +512,10 @@ program
 program
   .command("answer <which> <answer...>")
   .description("Answer an ask — by number from `ayo agents`, or by ayo_ id")
+  .addHelpText("after", `
+Examples:
+  ayo answer 1 ship                 answer ask #1 from \`ayo agents\`
+  ayo answer 2 "use approach B, and add a test first"`)
   .action(async (which: string, answerParts: string[]) => {
     try {
       const s = requireSession();
@@ -487,10 +552,10 @@ program
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team.");
-      const { ayos } = await api.inbox(s, cfg.activeTeamId, undefined, opts.unread);
+      const teamId = requireTeam(cfg);
+      const { ayos } = await api.inbox(s, teamId, undefined, opts.unread);
       if (opts.json) return void console.log(JSON.stringify(ayos, null, 2));
-      if (!ayos.length) return void console.log(pc.dim("inbox zero ✨"));
+      if (!ayos.length) return void console.log(pc.dim("inbox zero"));
       // Unanswered asks PIN to the top — each one is a blocked agent, not a
       // scrollable message. Everything else keeps chronological order.
       const isOpenAsk = (a: (typeof ayos)[number]): boolean =>
@@ -520,13 +585,15 @@ program
 program
   .command("who")
   .description("List who's on your team (the handles you can ping)")
-  .action(async () => {
+  .option("--json", "raw JSON for agents", false)
+  .action(async (opts) => {
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
-      const { members } = await api.members(s, cfg.activeTeamId);
-      if (!members.length) return void console.log(pc.dim("No teammates yet — share a join code."));
+      const teamId = requireTeam(cfg);
+      const { members } = await api.members(s, teamId);
+      if (opts.json) return void console.log(JSON.stringify(members, null, 2));
+      if (!members.length) return void console.log(pc.dim("No teammates yet — run `ayo invite` for a paste-ready invitation."));
       for (const m of members) {
         const dot = m.online ? pc.green("●") : pc.dim("○");
         const you = m.handle.toLowerCase() === s.handle.toLowerCase() ? pc.dim(" (you)") : "";
@@ -549,7 +616,7 @@ program
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team.");
+      const teamId = requireTeam(cfg);
 
       const flagCount = [opts.active, opts.headsDown, opts.dnd, opts.away].filter(Boolean).length;
       if (flagCount > 1) {
@@ -573,7 +640,7 @@ program
       // (or for a bare read). If both are supplied, no round-trip.
       let current: { status: PresenceStatus; statusText: string | null } | undefined;
       if (flagStatus === undefined || text === undefined) {
-        const { members } = await api.members(s, cfg.activeTeamId);
+        const { members } = await api.members(s, teamId);
         const me = members.find((m) => m.handle.toLowerCase() === s.handle.toLowerCase());
         if (!me) {
           // Don't default to "active" — that would silently flip availability,
@@ -593,7 +660,7 @@ program
 
       const status = flagStatus ?? current!.status;
       const statusText = text ?? current?.statusText ?? null;
-      await api.setStatus(s, cfg.activeTeamId, { status, statusText });
+      await api.setStatus(s, teamId, { status, statusText });
       echo(status, statusText);
     } catch (err) {
       fail(err);
@@ -768,7 +835,7 @@ program
   });
 
 // ── hackathon mode ───────────────────────────────────────────────────────────
-const hack = program.command("hackathon").description("Shared deadline + ⏰ nudges + timeline export");
+const hack = program.command("hackathon").description("Shared deadline + milestone nudges + timeline export");
 hack
   .command("start <name>")
   .description("Start a sprint with a deadline, e.g. ayo hackathon start \"Hack Midwest\" --ends 18h")
@@ -807,16 +874,21 @@ program
   .option("--no-link", "don't also mint a shareable web link for the handoff")
   .option("--no-code", "mint the link but don't embed the team join code (share context without granting join access)")
   .option("--expires <hours>", "when the share link expires (default 7 days)")
+  .addHelpText("after", `
+Examples:
+  ayo handoff maya "stuck on the oauth callback"     branch + files + blocker, plus a share link
+  ayo handoff maya --with-diff                       include the full diff (may contain secrets)
+  ayo handoff team "who can take the deploy?"        offer it to anyone`)
   .action(async (target: string, message: string[], opts) => {
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      const teamId = requireTeam(cfg);
       const broadcast = ["all", "team", "everyone"].includes(target);
       const to = broadcast ? ["*"] : [resolveHandle(cfg, target)];
       const ctx = captureContext({ withDiff: opts.withDiff });
       const body = message.join(" ") || "Handing this off.";
-      const res = await api.send(s, cfg.activeTeamId, {
+      const res = await api.send(s, teamId, {
         to,
         body,
         kind: "handoff",
@@ -837,7 +909,7 @@ program
       if (opts.link) {
         try {
           const hrs = opts.expires ? Number(opts.expires) : undefined;
-          const link = await api.createHandoffLink(s, cfg.activeTeamId, {
+          const link = await api.createHandoffLink(s, teamId, {
             blocker: body,
             context: ctx,
             ayoId: res.id, // replies from the page thread back to this handoff
@@ -846,7 +918,7 @@ program
             // lets the relay embed the code; false explicitly omits it.
             includeJoinCode: opts.code === false ? false : undefined,
           });
-          console.log(pc.green("  🔗 share link: ") + pc.cyan(link.url));
+          console.log(pc.green("  ✓ share link  ") + pc.cyan(link.url));
           const reach = opts.code === false
             ? "shows your context to anyone — no join code embedded."
             : "works for anyone, even before they're on Ayo — expires automatically.";
@@ -870,12 +942,21 @@ program
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      if (!cfg.activeTeamId) return console.log("No active team. `ayo team create` or `ayo join` first.");
+      const teamId = requireTeam(cfg);
       const body = message.join(" ");
-      if (!body) return console.log("Nothing to send. `ayo <handle> <message>`");
+      if (!body) {
+        // `ayo inbxo` lands here (unknown tokens fall through to the default send
+        // command) — a bare near-miss of a command name is a typo, not a ping.
+        const near = HELP_ORDER.find((c) => levenshtein(target.toLowerCase(), c) <= 2);
+        if (near) {
+          console.error(pc.yellow(`Unknown command '${target}' — did you mean \`ayo ${near}\`?`));
+          return void (process.exitCode = 1);
+        }
+        return void console.log("Nothing to send. `ayo <handle> <message>`");
+      }
       const broadcast = ["all", "team", "everyone"].includes(target);
       const to = broadcast ? ["*"] : [resolveHandle(cfg, target)];
-      const res = await api.send(s, cfg.activeTeamId, {
+      const res = await api.send(s, teamId, {
         to,
         body,
         urgency: opts.urgent ? "urgent" : "normal",
