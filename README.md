@@ -16,10 +16,8 @@ their inbox, or dropped into their agent's next turn.
 
 It captures the context for you (repo, branch, changed files, diff stat, the
 blocker), so a handoff carries what you were doing and not just "hey, look at
-this." Every handoff also becomes a link that renders your work for anyone, even
-someone who has never installed Ayo, and they can reply straight from the page.
-Git and your existing tools stay the source of truth. Ayo never calls an LLM,
-and it forgets your 1:1 pings on purpose. It is a sidechannel, not a second
+this." Git and your existing tools stay the source of truth. Ayo never calls an
+LLM, and it forgets your 1:1 pings on purpose. It is a sidechannel, not a second
 inbox to keep up with.
 
 <!-- Demo GIF: `vhs scripts/demo.tape` writes docs/demo.gif, then uncomment:
@@ -32,9 +30,9 @@ npm install -g @ayo-dev/cli
 ayo init      # login, pick a sound, wire your agents, then ping yourself to prove it works
 ```
 
-`ayo init` ends by sending a real Ayo to you, so you see the toast and hear your
-sound in under a minute with no teammate required. Then `ayo team create` prints
-a join code, and the rest is `ayo <name> "..."`.
+`ayo init` ends by pinging you, so you see the toast and hear your sound in under
+a minute, no teammate required. Then `ayo team create` prints a join code, and
+the rest is `ayo <name> "..."`.
 
 ## The problem
 
@@ -62,12 +60,13 @@ Or, from inside Codex or Claude Code, since you are probably already in there:
   automatically, so "can you look?" arrives with the what.
 - **Hand off with a link.** Every handoff becomes a page anyone can open, even
   without Ayo, and reply from. A Loom-style link for a blocker.
-- **Answer your own agents.** An agent can stop and ask you a question, then
-  block until you answer, so it keeps working instead of guessing.
+- **Answer your own agents.** When your agent hits a fork it should not take
+  alone (deploy to prod, pick an approach), it asks you and waits, instead of
+  guessing and moving on.
 - **Bring the outside in.** Point CI, cron, a script, or GitHub at a webhook and
   the events that need you show up in your terminal instead of an email you will
   not read.
-- **A live board.** One pane: who is online, who is heads-down, which handoffs
+- **See the board.** One pane: who is online, who is heads-down, which handoffs
   are still open.
 - **Agent-native.** An MCP server lets your agent ping, hand off, read your
   inbox, and ask on your behalf.
@@ -167,9 +166,8 @@ It shares your CLI identity, so you log in once.
 
 ## How it works
 
-Ayo is not another chat app. It is local infra that makes agent communication
-ambient. Install once, and your machine receives Ayos no matter where you are:
-Codex, Claude Code, the terminal, the browser, whatever.
+Ayo is not another chat app. It is local infra, so your machine receives Ayos no
+matter where you are: Codex, Claude Code, the terminal, the browser, whatever.
 
 ```
 Relay ─▶ local Ayo daemon (ayod) ─▶ OS notification + local inbox   ← always on, real-time
@@ -206,7 +204,7 @@ wiring, and fires a test toast.
 
 </details>
 
-## Try it solo (one machine, no teammate)
+<details><summary>Try it solo on one machine (no teammate)</summary>
 
 The local relay has a dev stub that lets you be two people with no second laptop
 and no GitHub account. `AYO_DIR` keeps each persona's files separate.
@@ -232,18 +230,20 @@ ayo you "does this actually work?"     # Terminal 2 gets a native toast
 
 Or run [`scripts/demo.sh`](scripts/demo.sh) for a scripted walkthrough.
 
+</details>
+
 ## What Ayo is not
 
 - **Not a chat app.** No threads, no reactions, no history to scroll. Handoffs
   show on the board and pings live in your inbox until you read them. If you want
   a conversation, you already have one open somewhere.
 - **Not a feed.** It is a sidechannel for the moment something needs a human, not
-  a stream to keep up with. Quiet is the default.
+  a stream you have to stay on top of. Quiet is the default.
 - **Not zero-infra.** It needs the hosted relay (or your own, it is a Cloudflare
   Worker you can self-host) and a background daemon on macOS or Linux.
 - **Not fully branded on macOS yet.** The clickable, logo'd notification needs a
-  signed and notarized helper, which is in progress. Until then macOS shows a
-  standard toast. Windows and Linux already carry the Ayo icon.
+  signed and notarized helper (in progress). Until then macOS shows a standard
+  toast. Windows and Linux already carry the Ayo icon.
 
 ## Packages
 
