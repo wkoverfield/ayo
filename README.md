@@ -79,8 +79,6 @@ ayo handoff maya "stuck on the oauth callback"
   ✓ share link  https://…/h/AbCd…      # works for anyone, expires on its own
 ```
 
-<p align="center"><img src="docs/handoff-page.png" alt="The handoff page a recipient opens: the sender and blocker up top, a work-context card with the repo, branch, commit, diff stat, and changed files, a reply box that needs no account, and an install-and-join call to action." width="440"></p>
-
 Drop it in a text, a PR comment, wherever. Whoever opens it gets your full
 context and can reply right from the page, no account and no install. Their
 answer lands in your terminal, threaded to the handoff. The install nudge comes
