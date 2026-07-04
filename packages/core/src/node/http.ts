@@ -1,7 +1,7 @@
 /**
- * The shared relay JSON transport for the CLI and the MCP server. (A few
- * binary paths — WAV upload, sound-clip download — keep bespoke fetches in
- * the CLI; see docs/FOLLOWUPS.md.) Speaks the relay's
+ * The shared relay JSON transport for the CLI and the MCP server. (A few CLI
+ * call sites keep bespoke fetches — binary WAV upload/clip download, and an
+ * AbortSignal-budgeted inbox refresh; see docs/FOLLOWUPS.md.) Speaks the relay's
  * { error: { code, message } } contract, redacts the bearer token from
  * anything that might reflect it, and throws a typed RelayError so callers
  * can branch on `code` instead of parsing prose.
