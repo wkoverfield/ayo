@@ -69,6 +69,7 @@ body{background:var(--paper);color:var(--ink);font-family:'Sora',-apple-system,B
 .brand{display:flex;align-items:center;gap:11px;margin-bottom:24px}
 .brand img{width:40px;height:40px;border-radius:10px;display:block}
 .brand .tag{font-size:12px;color:var(--muted);letter-spacing:.02em}
+.brand .tag a{color:var(--ink2);font-weight:500;text-decoration:underline;text-underline-offset:2px}
 .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:15px}
 .avatar{width:34px;height:34px;border-radius:50%;background:var(--coral);color:#FDEDE7;font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .who{font-size:13.5px;color:var(--ink2)}
@@ -99,8 +100,8 @@ code{font-family:var(--mono)}
 .reply .lbl{color:#A63A1B}
 .reply-h{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:18px;color:var(--ink);margin-bottom:4px;letter-spacing:-.01em}
 .reply-sub{font-size:13px;color:var(--ink2);margin-bottom:12px}
-.field{width:100%;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font:inherit;font-size:14px;color:var(--ink);margin-bottom:9px}
-textarea.field{min-height:72px;resize:vertical}
+.field{width:100%;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font:inherit;font-size:16px;color:var(--ink);margin-bottom:9px}
+textarea.field{min-height:88px;resize:vertical}
 .frow{display:flex;gap:9px;align-items:stretch}
 .frow .field{flex:1;margin-bottom:0}
 .btn{background:var(--coral);color:#fff;font:inherit;font-weight:600;font-size:14px;border-radius:9px;padding:10px 18px;border:none;cursor:pointer;white-space:nowrap}
@@ -113,6 +114,9 @@ textarea.field{min-height:72px;resize:vertical}
 .cta{background:var(--sage-bg);border:1px solid #CDE3D5;border-radius:15px;padding:20px;margin:22px 0 8px}
 .cta .lbl{color:var(--sage-strong)}
 .cta-h{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:18px;color:var(--ink);margin-bottom:13px;letter-spacing:-.01em}
+.cta-quiet{padding:16px 19px;margin-top:18px}
+.cta-quiet .cta-h{font-size:15.5px;margin-bottom:10px}
+.cta-quiet .step{margin-top:11px}
 .step{display:flex;gap:12px;margin-top:13px}
 .num{width:22px;height:22px;border-radius:50%;background:var(--sage-strong);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:0 0 auto;margin-top:2px}
 .step .body{flex:1;min-width:0}
@@ -126,6 +130,16 @@ textarea.field{min-height:72px;resize:vertical}
 .foot{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;color:var(--muted);margin-top:24px;text-align:center}
 .foot img{width:16px;height:16px;border-radius:4px;vertical-align:middle}
 .foot a{color:var(--ink2);text-decoration:none}
+@media (max-width:600px){
+body{padding:24px 15px 26px}
+h1{font-size:22px}
+.card{padding:15px 16px}
+.field{padding:12px 13px}
+textarea.field{min-height:110px}
+.frow{flex-direction:column}
+.btn{width:100%;padding:13px 18px}
+.diff .row{font-size:11px}
+}
 @media (prefers-color-scheme:dark){
 :root{--paper:#1C1B1E;--card:#242327;--ink:#F1E9DC;--ink2:#BCB6A8;--muted:#8B8577;--coral:#F0795A;--coral-bg:#3A2620;--sage:#66C296;--sage-strong:#93DDB7;--sage-bg:#1F2C26;--border:#33313A}
 .note{color:#DBD4C6}.chip{background:#3A2620;color:#F6A98E}.pill{background:#242327;color:#BCB6A8}
@@ -154,7 +168,7 @@ function shell(inner: string): string {
   );
 }
 
-const HEADER = `<div class="brand rise"><img src="${AYO_LOGO_DATA_URI}" alt="Ayo" width="40" height="40"><span class="tag">a handoff for you</span></div>`;
+const HEADER = `<div class="brand rise"><img src="${AYO_LOGO_DATA_URI}" alt="Ayo" width="40" height="40"><span class="tag">a handoff for you · sent with <a href="${REPO_URL}">Ayo</a> (open source)</span></div>`;
 const FOOTER = `<div class="foot rise"><img src="${AYO_LOGO_DATA_URI}" alt=""> Sent with <a href="${REPO_URL}">Ayo</a> — attention pings from inside your terminal &amp; agents</div>`;
 
 /** Render a live handoff. Every `${}` is an escaped value or a constant.
@@ -196,7 +210,7 @@ export function renderHandoffPage(share: HandoffShare, token: string): string {
     const exp = share.joinCodeExpiresAt;
     const codeExpired = exp != null && new Date(exp).getTime() <= Date.now();
     if (codeExpired) {
-      joinBlock = `<div class="ask">The join code in this handoff has expired — ask ${from} for a fresh <code>ayo invite</code>.</div>`;
+      joinBlock = `<div class="ask">The join code in this handoff has expired — replying above still works. When you're ready to join, ask ${from} for a fresh code and run <code>ayo join &lt;code&gt;</code>.</div>`;
     } else {
       const note = exp ? `<div class="codenote">code ${escapeHtml(timeLeft(exp))}</div>` : "";
       joinBlock = `<div class="step"><div class="num">2</div><div class="body"><div class="t">Join the team &amp; pick it up</div><div class="term"><span class="code">ayo join <span class="code-em">${escapeHtml(share.joinCode)}</span></span></div>${note}</div></div>`;
@@ -204,7 +218,7 @@ export function renderHandoffPage(share: HandoffShare, token: string): string {
   } else {
     joinBlock = `<div class="ask">Then ask ${from} for a join code and run <code>ayo join &lt;code&gt;</code>.</div>`;
   }
-  const cta = `<div class="cta rise"><div class="lbl">Pick this up</div><div class="cta-h">Grab ${from}'s work</div>${installStep}${joinBlock}</div>`;
+  const cta = `<div class="cta cta-quiet rise"><div class="lbl">Pick this up</div><div class="cta-h">Grab ${from}'s work</div>${installStep}${joinBlock}</div>`;
 
   // The conversion order is deliberate: reply FIRST (coral, zero-friction, no
   // account), install second (sage). The `website` field is a honeypot — hidden
@@ -215,8 +229,8 @@ export function renderHandoffPage(share: HandoffShare, token: string): string {
     <form method="post" action="/h/${token}/reply">
       <textarea class="field" name="message" required maxlength="2000" placeholder="on it — looking now…"></textarea>
       <div class="hp" aria-hidden="true"><label>Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
-      <div class="frow"><input class="field" type="text" name="name" maxlength="40" placeholder="Your name (shown to ${from})"><button class="btn" type="submit">Send reply</button></div>
-      <div class="hint">Delivered as "via ${from}'s handoff link" — never as a team member.</div>
+      <div class="frow"><input class="field" type="text" name="name" maxlength="40" placeholder="Your name"><button class="btn" type="submit">Send reply</button></div>
+      <div class="hint">Your name is shown to ${from} — replying doesn't add you to the team.</div>
     </form></div>`;
 
   const body = `
@@ -235,16 +249,24 @@ export function renderHandoffPage(share: HandoffShare, token: string): string {
 }
 
 /** The post-reply state — the warm conversion moment. The install ask lands
- *  HERE, after they've gotten value, not before. */
-export function renderReplySentPage(share: HandoffShare, guestName: string): string {
+ *  HERE, after they've gotten value, not before. Echoes the guest's message
+ *  back so they trust it actually landed. */
+export function renderReplySentPage(share: HandoffShare, guestName: string, message: string): string {
   const from = escapeHtml(share.from.name || share.from.handle);
   const guest = escapeHtml(guestName);
-  const joinStep = share.joinCode
+  // Same stale-code rule as the live page: never hand out a dead command.
+  const exp = share.joinCodeExpiresAt;
+  const codeExpired = exp != null && new Date(exp).getTime() <= Date.now();
+  const joinStep = share.joinCode && !codeExpired
     ? `<div class="step"><div class="num">2</div><div class="body"><div class="t">Join ${from}'s team</div><div class="term"><span class="code">ayo join <span class="code-em">${escapeHtml(share.joinCode)}</span></span></div></div></div>`
+    : "";
+  const replyEcho = message
+    ? `<div class="card rise"><div class="lbl">Your reply</div><div class="note">${escapeHtml(message)}</div></div>`
     : "";
   const body = `
     ${HEADER}
     <div class="sent rise"><div class="check">✓</div><div><div class="sent-h">Sent — ${from} will see it in their terminal</div><div class="sent-sub">Threaded to this handoff, from &ldquo;${guest} (via link)&rdquo;.</div></div></div>
+    ${replyEcho}
     <div class="cta rise"><div class="lbl">Keep the loop going</div><div class="cta-h">Want ${from}'s reply to land where <em>you</em> work?</div>
       <div class="step"><div class="num">1</div><div class="body"><div class="t">Install Ayo — the conversation follows you into your terminal &amp; agents, with the code context attached</div><div class="term"><span class="code">${escapeHtml(INSTALL_CMD)}</span></div></div></div>
       ${joinStep}
@@ -255,12 +277,20 @@ export function renderReplySentPage(share: HandoffShare, guestName: string): str
 }
 
 /** A branded error page for the no-JS reply form — a human must never land on
- *  raw JSON. Links back to the handoff so their context isn't a dead end. */
-export function renderReplyErrorPage(token: string, message: string): string {
+ *  raw JSON. Links back to the handoff so their context isn't a dead end.
+ *  When we have the guest's draft, echo it back so the failure can't eat it. */
+export function renderReplyErrorPage(token: string, message: string, draft?: string): string {
+  const draftCard = draft
+    ? `<div class="card rise"><div class="lbl">Your reply</div><div class="note">${escapeHtml(draft)}</div></div>`
+    : "";
+  const backNote = draft
+    ? `<a href="/h/${token}">← Back to the handoff</a> — your reply is shown above, copy it first.`
+    : `<a href="/h/${token}">← Back to the handoff</a> — your reply isn't saved, so copy it before you retry.`;
   const body = `
     ${HEADER}
     <div class="sent rise"><div class="check" style="background:#A63A1B">!</div><div><div class="sent-h">That didn't go through</div><div class="sent-sub">${escapeHtml(message)}</div></div></div>
-    <div class="card rise"><div class="note"><a href="/h/${token}">← Back to the handoff</a> — your reply isn't saved, so copy it before you retry.</div></div>
+    ${draftCard}
+    <div class="card rise"><div class="note">${backNote}</div></div>
     ${FOOTER}
   `;
   return shell(body);

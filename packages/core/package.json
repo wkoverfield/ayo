@@ -1,7 +1,7 @@
 {
   "name": "@ayo-dev/core",
   "version": "0.2.0",
-  "description": "Shared message schema, wire protocol, and types for Ayo.",
+  "description": "Shared message schema, wire protocol, and types for Ayo — plus Node-only client runtime under ./node.",
   "license": "MIT",
   "author": "Wilson Overfield",
   "homepage": "https://github.com/wkoverfield/ayo#readme",
@@ -26,6 +26,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node/index.d.ts",
+      "default": "./dist/node/index.js"
     }
   },
   "files": [
@@ -44,6 +48,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^22.10.2",
     "typescript": "^5.7.2"
   }
 }

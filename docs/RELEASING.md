@@ -55,6 +55,12 @@ git commit -am "release: vX.Y.Z" && git tag vX.Y.Z
 partial failure is safe. If `cli`/`mcp` can't resolve `@ayo-dev/core` right after
 publish, give the registry CDN ~a minute to propagate and re-run `pnpm release`.)
 
+> **Lockstep is load-bearing, not just tidy:** `cli`/`mcp` import
+> `@ayo-dev/core/node` (added after 0.2.0), and their `workspace:^` dep lets npm
+> satisfy the range with an older published core. Publishing cli/mcp without
+> bumping+publishing core in the same release ships a CLI that dies at import
+> with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
 ### Notes
 
 - `pnpm publish` enforces a clean git tree and will refuse on a dirty checkout.

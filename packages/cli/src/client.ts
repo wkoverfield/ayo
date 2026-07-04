@@ -27,34 +27,15 @@ import type {
   SetSoundRequest,
   SetStatusRequest,
 } from "@ayo-dev/core";
+import { relayCall, RelayError, type RelayCallOpts } from "@ayo-dev/core/node";
 import { loadConfig, type Session } from "./config.js";
 
-export class RelayError extends Error {
-  constructor(
-    public code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+// The transport (and RelayError) live in @ayo-dev/core/node, shared with the
+// MCP server — token redaction and error parsing happen there, once.
+export { RelayError } from "@ayo-dev/core/node";
 
-async function call<T>(path: string, opts: { method?: string; body?: unknown; token?: string } = {}): Promise<T> {
-  const { relayUrl } = loadConfig();
-  const res = await fetch(`${relayUrl}${path}`, {
-    method: opts.method ?? "GET",
-    headers: {
-      ...(opts.body ? { "content-type": "application/json" } : {}),
-      ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
-    },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!res.ok) {
-    const code = data?.error?.code ?? "http_error";
-    throw new RelayError(code, data?.error?.message ?? `HTTP ${res.status}`);
-  }
-  return data as T;
+function call<T>(path: string, opts: RelayCallOpts = {}): Promise<T> {
+  return relayCall<T>(loadConfig().relayUrl, path, opts);
 }
 
 export const api = {
