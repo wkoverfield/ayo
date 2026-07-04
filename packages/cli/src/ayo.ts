@@ -626,11 +626,14 @@ program
           // the relay stamps guest replies with a `re: "<blocker>"` note (the
           // handoff's sender never has their own handoff in their inbox).
           const ref = byId.get(a.replyTo);
+          const clip = (t: string): string => (t.length > 54 ? `${t.slice(0, 53)}…` : t);
+          // "message", not "handoff": nothing enforces that replyTo points at a
+          // handoff, and the fallback must not claim more than it knows.
           const tie = ref
-            ? `↳ re: "${ref.body.length > 48 ? `${ref.body.slice(0, 47)}…` : ref.body}"`
+            ? `↳ re: ${clip(`"${ref.body}"`)}`
             : a.context?.note?.startsWith('re: "')
-              ? `↳ ${a.context.note}`
-              : "↳ re: an earlier handoff";
+              ? `↳ ${clip(a.context.note)}`
+              : "↳ re: an earlier message";
           console.log(pc.dim(`      ${tie}`));
         }
         if (a.context?.diffStat) console.log(pc.dim(`      ${a.context.diffStat}`));

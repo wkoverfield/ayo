@@ -53,11 +53,12 @@ function render(team: string, members: MemberPresence[], items: FeedItem[], hack
     const where = ctx?.repo ? pc.blue(`${ctx.repo}@${ctx.branch ?? "?"}`) : pc.dim("—");
     // The status WORD is their availability setting (active/heads-down/…) — for
     // someone who isn't connected, showing "active" reads as a lie next to the
-    // offline dot. But heads-down/dnd/away are set on purpose and stay true
-    // offline — hide them and a teammate can't see the do-not-disturb signal
-    // before pinging. So: online → the word; offline → "offline", plus the
-    // quiet state when one is set. A note renders alongside, never instead.
-    const quiet = m.status === "heads-down" || m.status === "dnd" || m.status === "away";
+    // offline dot. But heads-down/dnd are set on purpose, stay true offline,
+    // and actually HOLD pings — hide them and a teammate can't see the
+    // do-not-disturb signal before pinging. (away doesn't gate anything and
+    // reads redundant next to "offline", so it gets no suffix.) A note renders
+    // alongside, never instead.
+    const quiet = m.status === "heads-down" || m.status === "dnd";
     const word = m.online ? m.status : quiet ? `offline · ${m.status}` : "offline";
     const status = pc.dim(word) + (m.statusText ? ` ${pc.cyan(`"${truncate(m.statusText, 24)}"`)}` : "");
     const when = lastSeen.has(m.handle) ? pc.dim(rel(lastSeen.get(m.handle)!).padStart(4)) : pc.dim("    ");
@@ -78,7 +79,7 @@ function render(team: string, members: MemberPresence[], items: FeedItem[], hack
   if (items.length === 0) out.push(pc.dim("    (quiet so far)"));
   for (const i of items.slice(0, 6)) {
     const a = i.ayo;
-    const icon = a.kind === "handoff" ? pc.magenta("⤷") : a.urgency === "urgent" ? "!" : pc.dim("▸");
+    const icon = a.kind === "handoff" ? pc.magenta("⤷") : a.urgency === "urgent" ? pc.red("!") : pc.dim("▸");
     out.push(`    ${pc.dim(rel(a.createdAt).padStart(4))}  ${pc.cyan(a.from.handle)} ${icon} ${truncate(a.body, 42)}`);
   }
 
