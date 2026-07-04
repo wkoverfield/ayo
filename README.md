@@ -9,16 +9,16 @@
 
 </div>
 
-Ayo keeps a small team in sync without anyone leaving their terminal or their
-coding agent. You ping a teammate, it lands where they already are (a native
+Ayo keeps a small team, five or fewer, in sync without anyone leaving their
+terminal or their coding agent. You ping a teammate, it lands where they already are (a native
 notification, their inbox, or dropped into their agent's next turn), and their
 reply lands back in yours. Nobody alt-tabs, nobody loses their place.
 
 Every ping carries your git context automatically (repo, branch, changed
-files), so "the auth endpoint is live" arrives with the what. Git and your
+files), so "the auth endpoint is live" arrives carrying where and what changed. Git and your
 existing tools stay the source of truth. Ayo never calls an LLM, and it forgets
-your 1:1 pings on purpose. It is a sidechannel, not a second inbox to keep up
-with. Built for teams of about five or fewer who live in their terminals.
+your 1:1 pings on purpose. It is a sidechannel, not a second
+inbox to keep up with.
 
 ```bash
 npm install -g @ayo-dev/cli
@@ -33,31 +33,31 @@ the rest is `ayo <name> "..."`.
 ## The problem
 
 You are deep in the backend, Maya is deep in the UI, and she has been blocked on
-your auth endpoint for an hour. It just went live. Now you get to alt-tab to
+your auth endpoint for an hour. It just went live. So you alt-tab to
 Slack, find the channel, type the message, and lose your place. When she sees
 it twenty minutes later, she alt-tabs out of her own flow to ask which branch.
 Two people out of flow to move one sentence.
 
 Your agent can write the endpoint. It cannot tell Maya she is unblocked. Only
-you know that, the moment it becomes true. Ayo moves that moment from your flow
-to hers, context attached, without either of you leaving the terminal:
+you know that, the moment it becomes true. Ayo carries that one sentence to
+her, context attached, without either of you leaving the terminal:
 
 ```bash
-ayo maya "auth endpoint is live, you're unblocked"   # lands as a toast + in her agent
+ayo maya "auth endpoint is live, you're unblocked"   # lands where she is: a toast, or her agent's next turn
 ayo team "schema changed, pull before you build"     # tell everyone
 ayo maya --urgent "prod deploy is red"               # break through heads-down
 ```
 
 Or, from inside Codex or Claude Code, since you are probably already in there:
 
-> _"Ayo Maya that the endpoint's live and include my current branch."_
+> _"Ayo Maya that the endpoint's live."_
 
 ## What it does
 
 - **Ping with context.** A message carries your repo, branch, and changed files
   automatically, so "can you look?" arrives with the what.
 - **Respect focus.** Heads-down holds non-urgent pings for the inbox; urgent
-  breaks through. The board shows who is reachable before you ping.
+  breaks through.
 - **Answer your own agents.** When your agent hits a fork it should not take
   alone (deploy to prod, pick an approach), it asks you and waits, instead of
   guessing and moving on.
@@ -75,10 +75,11 @@ Or, from inside Codex or Claude Code, since you are probably already in there:
 ## Handing off
 
 When you do need to put your work in someone else's hands, `ayo handoff maya
-"the deploy is yours"` sends your branch, changed files, and diff stat, and
-mints a shareable page that renders all of it. That page is for the teammate
-who hasn't installed Ayo yet: they can read the context and reply right from
-it, no account needed. Their answer lands in your terminal.
+"the deploy is yours"` mints a shareable page rendering your branch, changed
+files, diff stat, and the blocker. That page is for the teammate who has not
+installed Ayo yet: they can read the context, reply right from it with no
+account, and it carries a join code naming you as the inviter, so replying can
+become joining. Their answer lands in your terminal.
 
 Handoffs only attach the full diff when you pass `--with-diff`, since a diff can
 carry uncommitted secrets. `--no-code` shares context without granting join
@@ -268,7 +269,7 @@ identity boundary, no LLM calls, a sidechannel not a second inbox); see
 [CONTRIBUTING.md](CONTRIBUTING.md) for how to run it locally and what fits. Open
 an issue first for anything touching the relay or the wire protocol.
 
-Found a security issue? Please report it privately, via [SECURITY.md](SECURITY.md).
+Found a security issue? Please report it privately through [SECURITY.md](SECURITY.md).
 
 ## License
 
