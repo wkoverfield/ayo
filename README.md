@@ -77,9 +77,9 @@ Or, from inside Codex or Claude Code, since you are probably already in there:
 When you do need to put your work in someone else's hands, `ayo handoff maya
 "the deploy is yours"` mints a shareable page rendering your branch, changed
 files, diff stat, and the blocker. That page is for the teammate who has not
-installed Ayo yet: they can read the context, reply right from it with no
-account, and it carries a join code naming you as the inviter, so replying can
-become joining. Their answer lands in your terminal.
+installed Ayo yet: they can read the context and reply right from it with no
+account. The page carries a join code naming you as the inviter, so replying
+can become joining. Their answer lands in your terminal.
 
 Handoffs only attach the full diff when you pass `--with-diff`, since a diff can
 carry uncommitted secrets. `--no-code` shares context without granting join
@@ -150,7 +150,7 @@ your agent can ping, hand off, read, and ask for you: `send_ayo`, `read_inbox`,
 `share_context`, `create_handoff`, `request_approval`, `team_status`,
 `set_status`, `resolve_ayo`. Just ask:
 
-> _"Ayo Kenny that the deploy's cooked and include my current branch."_
+> _"Ayo Kenny that the deploy's cooked."_
 > _"Hand this off to Maya with a summary of where I'm stuck."_
 > _"Check my Ayo inbox and summarize anything urgent."_
 
