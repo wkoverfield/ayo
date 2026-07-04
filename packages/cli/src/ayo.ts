@@ -55,7 +55,7 @@ program.showSuggestionAfterError(true);
 // gesture first; registration order is code organization, not importance.
 const HELP_ORDER = [
   "init", "handoff", "inbox", "agents", "answer", "board", "status", "who",
-  "team", "invite", "join", "hook", "sound", "hackathon",
+  "team", "invite", "join", "webhook", "sound", "hackathon",
   "doctor", "daemon", "hooks", "mcp", "login", "uninstall", "help",
 ];
 program.configureHelp({
@@ -81,6 +81,7 @@ Examples:
   ayo handoff maya "stuck on oauth"                    hand off with git context + a share link
   ayo agents                                           which asks are waiting on you
   ayo board                                            live team dashboard
+  ayo webhook create --github                          GitHub reviews/@mentions become Ayos
 
 Docs: https://github.com/wkoverfield/ayo`,
 );
@@ -117,7 +118,7 @@ function requireTeam(cfg: ReturnType<typeof loadConfig>): string {
  * Ayo that went nowhere (a typo'd or not-yet-joined handle used to look like a
  * success). Shared by `send`, `handoff`, and `team` broadcast.
  */
-function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: boolean } = {}): void {
+function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: boolean; self?: boolean } = {}): void {
   const label = opts.label ?? "ayo sent";
   const live = res.deliveredTo.length;
   const queued = res.queuedFor.length;
@@ -145,11 +146,18 @@ function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: bo
     // Not lost — everyone reached is just focusing; it's in their inbox.
     console.log(pc.green(`✓ ${label}`) + pc.dim(" (held for focus)"));
   } else if (unknown.length === 0) {
-    // A real send that reached no one — not a typo, just an empty room.
+    // A real send that reached no one. For a DIRECTED send that's a failure
+    // (exit 1 below) — mark it like one, don't whisper it. An empty-room
+    // broadcast stays a gentle nudge (nothing was mis-addressed). In practice
+    // the directed case means every named handle was the sender (the relay
+    // skips non-ask self-pings; anything else lands in unknownRecipients) —
+    // when the caller confirms that, say so instead of a wrong-trail hint.
     console.log(
       opts.broadcast
         ? pc.yellow("· nobody to reach yet — invite a teammate with a join code")
-        : pc.yellow("· reached no one"),
+        : opts.self
+          ? pc.red("✗ reached no one") + pc.dim("  — that's your own handle; self-pings are skipped (your agent's asks still come through)")
+          : pc.red("✗ reached no one") + pc.dim("  — check who's on the team with `ayo who`"),
     );
   }
   // (reached 0 AND unknown.length > 0 — the warning above already explained it.)
@@ -362,9 +370,14 @@ program
     }
   });
 
-// ── hook (inbound webhooks: one curl → Ayo) ──────────────────────────────────
+// ── webhook (inbound webhooks: one curl → Ayo) ───────────────────────────────
+// `webhook`, not `hook`: `ayo hooks` (agent wiring) already exists, and a one-
+// keystroke gap between two different concepts is a footgun. `hook` stays as an
+// alias (visible in help as webhook|hook — deliberate, so people who learned
+// `hook` can see where it went) and keeps working.
 const hook = program
-  .command("hook")
+  .command("webhook")
+  .alias("hook")
   .description("Inbound webhooks — fire an Ayo into your team from any script or service");
 hook
   .command("create")
@@ -394,7 +407,7 @@ hook
         console.log(pc.dim("    Events:       Pull requests, Pull request reviews, Issue comments, PR review comments"));
         console.log(
           pc.dim(
-            "\n  Review requests, @mentions, and review submissions become Ayos to the\n  matching handle (Ayo handle = GitHub login). Secret shown once — revoke with `ayo hook revoke <url>`.",
+            "\n  Review requests, @mentions, and review submissions become Ayos to the\n  matching handle (Ayo handle = GitHub login). Secret shown once — revoke with `ayo webhook revoke <url>`.",
           ),
         );
         return;
@@ -405,7 +418,7 @@ hook
       console.log(pc.dim(`    curl -X POST ${info.url} \\`));
       console.log(pc.dim(`      -H 'content-type: application/json' -d '{"text":"build passed ✅"}'`));
       console.log(
-        pc.dim("\n  Keep this URL secret — anyone with it can ping your team. Revoke with `ayo hook revoke <url>`."),
+        pc.dim("\n  Keep this URL secret — anyone with it can ping your team. Revoke with `ayo webhook revoke <url>`."),
       );
     } catch (err) {
       fail(err);
@@ -420,7 +433,7 @@ hook
       const cfg = loadConfig();
       const teamId = requireTeam(cfg);
       const { hooks } = await api.listWebhooks(s, teamId);
-      if (!hooks.length) return console.log(pc.dim("No webhooks yet. `ayo hook create`."));
+      if (!hooks.length) return console.log(pc.dim("No webhooks yet. `ayo webhook create`."));
       for (const h of hooks) {
         const scope = h.kind === "github" ? pc.dim(" (github)") : h.to ? ` → ${h.to}` : " → team";
         // The relay only returns the URL for hooks YOU created (it's a secret).
@@ -551,7 +564,7 @@ Examples:
 // ── inbox ────────────────────────────────────────────────────────────────────
 program
   .command("inbox")
-  .description("Read your Ayos")
+  .description("Read your Ayos — open asks pin to the top")
   .option("--unread", "only unread", false)
   .option("--json", "raw JSON for agents", false)
   .action(async (opts) => {
@@ -901,7 +914,7 @@ Examples:
         urgency: opts.urgent ? "urgent" : "normal",
         context: ctx,
       });
-      reportSend(res, { label: "handoff sent", broadcast });
+      reportSend(res, { label: "handoff sent", broadcast, self: !broadcast && to.every((h) => h.toLowerCase() === s.handle.toLowerCase()) });
       if (ctx?.repo) {
         const bits = [`${ctx.repo}@${ctx.branch ?? "?"}`, `${ctx.changedFiles?.length ?? 0} changed`];
         if (ctx.diff) bits.push("full diff");
@@ -968,7 +981,7 @@ program
         urgency: opts.urgent ? "urgent" : "normal",
         context: captureContext({ withDiff: opts.withDiff }),
       });
-      reportSend(res);
+      reportSend(res, { broadcast, self: !broadcast && to.every((h) => h.toLowerCase() === s.handle.toLowerCase()) });
     } catch (err) {
       fail(err);
     }
