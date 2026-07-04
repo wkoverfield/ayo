@@ -113,17 +113,17 @@ default, so nothing hangs forever.
 
 ## Bring the outside in
 
-Attention should not only come from people. `ayo hook create` mints a revocable
-webhook URL so any system can turn an event into an Ayo:
+Attention should not only come from people. `ayo webhook create` mints a
+revocable webhook URL so any system can turn an event into an Ayo:
 
 ```bash
-ayo hook create --label ci --to wilson     # one curl becomes an Ayo
+ayo webhook create --label ci --to wilson  # one curl becomes an Ayo
   curl -X POST https://…/v1/hooks/<token> -d '{"text":"build failed on main"}'
 
-ayo hook create --github                    # HMAC-verified GitHub webhook
+ayo webhook create --github                 # HMAC-verified GitHub webhook
 ```
 
-The `--github` hook maps the moments that actually need you (a review requested,
+The `--github` webhook maps the moments that actually need you (a review requested,
 an @mention in a PR thread, a review submitted on your PR) to an Ayo for the
 matching handle, where your Ayo handle is your GitHub login. Inbound automation
 always respects focus and never breaks through heads-down.

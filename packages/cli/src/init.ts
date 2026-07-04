@@ -185,6 +185,10 @@ export async function runInit(opts: InitOpts): Promise<void> {
           }
         }
       }
+    } else if (want("team") && session && !rl && !loadConfig().activeTeamId) {
+      // Non-interactive runs can't prompt — say what was skipped instead of
+      // ending on a silent gap ("am I set up?").
+      console.log(pc.dim("\n  (skipped team setup — no TTY. `ayo team create <name>` or `ayo join <code>` later.)"));
     }
 
     printNextSteps(dry);
@@ -261,11 +265,17 @@ function printNextSteps(dry: boolean): void {
     return;
   }
   console.log(pc.bold("\n  ✓ You're set."));
+  // The 30-second success path depends on whether there's anyone to ping yet.
+  if (!loadConfig().activeTeamId) {
+    console.log("  First, get a team: " + pc.cyan("ayo team create <name>") + pc.dim("  (or ") + pc.cyan("ayo join <code>") + pc.dim(" if you got an invite)"));
+    console.log("  Then invite someone: " + pc.cyan("ayo invite") + pc.dim("  — a paste-ready invitation"));
+  }
   console.log("  From inside Claude or Codex, just say: " + pc.cyan('"Ayo Maya with my current branch."'));
   console.log("  Or from the terminal: " + pc.cyan("ayo <teammate> \"deploy's cooked\""));
   console.log(pc.dim("  Hand off with context + a shareable link:  ") + pc.cyan("ayo handoff <teammate>"));
-  console.log(pc.dim("  Turn GitHub reviews/@mentions into Ayos:    ") + pc.cyan("ayo hook create --github"));
+  console.log(pc.dim("  Turn GitHub reviews/@mentions into Ayos:    ") + pc.cyan("ayo webhook create --github"));
   console.log(pc.dim("  Restart your agent once so the new wiring takes effect."));
+  console.log(pc.dim("  Anything feel off? `ayo doctor` checks the whole chain."));
 }
 
 /** Reverse what `init` wired locally. Leaves login + team membership intact —
