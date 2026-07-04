@@ -279,7 +279,7 @@ program
       rmSync(join(AYO_DIR, "session.json"), { force: true });
       console.log(
         pc.green("✓ logged out") +
-          (revoked ? "" : pc.yellow("  — couldn't confirm the server revoked the token; if it was still valid, log in and `ayo logout` again when the relay is reachable")),
+          (revoked ? "" : pc.yellow("  — couldn't reach the relay to revoke the token; it dies on its own 90 days after its last use")),
       );
       console.log(pc.dim("  your teams and config are untouched — `ayo login` to come back"));
     } catch (err) {
