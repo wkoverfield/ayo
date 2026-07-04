@@ -38,6 +38,7 @@ export function writeInbox(file: InboxFile): void {
 export function upsertInbox(ayo: Ayo): void {
   const inbox = loadInbox();
   if (!inbox.ayos.some((a) => a.id === ayo.id)) inbox.ayos.push(ayo);
+  if (inbox.ayos.length > INBOX_CAP) inbox.ayos = inbox.ayos.slice(-INBOX_CAP);
   inbox.updatedAt = new Date().toISOString();
   writeInbox(inbox);
 }
@@ -47,9 +48,20 @@ export function upsertInbox(ayo: Ayo): void {
 export type AgentSurface = "claude" | "codex";
 
 interface AgentState {
-  /** Highest Ayo id already surfaced, per agent surface. */
+  /** LEGACY (pre-0.4): highest Ayo id already surfaced. ULIDs are time-ordered,
+   *  so with per-team sockets a delayed replay could arrive with an OLDER id
+   *  than the marker and be skipped forever. Kept only to migrate. */
   markers?: Partial<Record<AgentSurface, string>>;
+  /** Exact ids already surfaced, per agent surface (capped). Order-independent,
+   *  so out-of-order multi-team replays can never be silently skipped. */
+  seen?: Partial<Record<AgentSurface, string[]>>;
 }
+
+const SEEN_CAP = 1000;
+/** Inbox cap — MUST stay below SEEN_CAP: the seen-set is pruned to its cap,
+ *  and if the inbox could outgrow it, evicted seen-ids still in the inbox
+ *  would resurface to the agent forever (a rotating re-inject loop). */
+const INBOX_CAP = 500;
 
 function loadAgentState(): AgentState {
   if (!existsSync(AGENT_STATE_PATH)) return {};
@@ -60,12 +72,18 @@ function loadAgentState(): AgentState {
   }
 }
 
-export function getLastSurfaced(surface: AgentSurface): string | undefined {
-  return loadAgentState().markers?.[surface];
+export function getSurfaced(surface: AgentSurface): { seen: Set<string>; legacy?: string } {
+  const st = loadAgentState();
+  return { seen: new Set(st.seen?.[surface] ?? []), legacy: st.markers?.[surface] };
 }
 
-export function setLastSurfaced(surface: AgentSurface, id: string): void {
+/** Record everything surfaced (or already in the inbox) as seen, and drop the
+ *  legacy high-water marker — the seen-set covers those ids from here on. */
+export function setSurfaced(surface: AgentSurface, ids: string[]): void {
   const state = loadAgentState();
-  state.markers = { ...state.markers, [surface]: id };
+  const prev = state.seen?.[surface] ?? [];
+  const merged = [...new Set([...prev, ...ids])];
+  state.seen = { ...state.seen, [surface]: merged.slice(-SEEN_CAP) };
+  if (state.markers) delete state.markers[surface];
   writeFileSync(AGENT_STATE_PATH, JSON.stringify(state));
 }

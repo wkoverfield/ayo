@@ -20,9 +20,9 @@ import { loadConfig, loadSession } from "./config.js";
 import { isDaemonAlive } from "./daemon-ctl.js";
 import {
   type AgentSurface,
-  getLastSurfaced,
+  getSurfaced,
   loadInbox,
-  setLastSurfaced,
+  setSurfaced,
   upsertInbox,
 } from "./inbox-store.js";
 import { claimPending, type PendingPing, registerSession, repoOf } from "./session-registry.js";
@@ -67,14 +67,18 @@ export async function surfaceUnread(opts: SurfaceOpts): Promise<void> {
       .ayos.filter((a) => a.from.handle !== session.handle || a.kind === "ask")
       .sort((a, b) => (a.id < b.id ? -1 : 1));
 
-    const last = getLastSurfaced(opts.surface);
-    const fresh = last ? mine.filter((a) => a.id > last) : mine;
+    // Seen-SET, not a high-water id: multi-team sockets replay out of order,
+    // and an older-id ayo arriving after a newer one must still surface once.
+    const { seen, legacy } = getSurfaced(opts.surface);
+    const fresh = mine.filter((a) => !seen.has(a.id) && (!legacy || a.id > legacy));
     if (fresh.length === 0) return;
 
     if (opts.print) process.stdout.write(formatForAgent(fresh));
     if (!daemonAlive) for (const a of fresh) notifyAyo(a); // self-healing fallback
 
-    setLastSurfaced(opts.surface, mine[mine.length - 1]!.id);
+    // Everything currently in the inbox counts as seen (migrates the legacy
+    // marker away: those ids are in the inbox, so they land in the set).
+    setSurfaced(opts.surface, [...seen, ...mine.map((a) => a.id)]);
   } catch {
     // Never break the agent. Swallow everything.
   }

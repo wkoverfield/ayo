@@ -50,8 +50,10 @@ validated; generic error messages). Still deferred:
   but unthrottled), or `POST /v1/teams/:id/ayo` (send flood → DO writes + fanout).
   Add a KV-counter or Cloudflare Rate Limiting binding, prioritizing the unauth
   device endpoints and per-token send caps.
-- **Session token expiry** — `session:<token>` is written with no `expirationTtl`
-  and there's no logout. Add a rolling TTL (e.g. 90d) + `POST /v1/auth/logout`.
+- **Session token expiry** — ✅ SHIPPED (2026-07-04): rolling 90d TTL (re-stamped
+  on every authenticate) + `POST /v1/auth/logout` / `ayo logout`. Caveat: a
+  legacy pre-TTL session that never makes another request stays valid until
+  explicitly revoked.
 - **`handleInbox` full scan** — lists all `msg:` with no limit/cursor (unlike the
   feed/timeline which are bounded). Use the existing `?since=` cursor as a storage
   `start` key + a limit.
@@ -284,3 +286,26 @@ its own module; sharing needs an `import.meta.url`-parameterized helper).
 
 The relay-must-not-import-`core/node` rule is enforced in CI (grep step in
 `ci.yml`) — keep that step if the workflow is ever restructured.
+
+
+## Account & team lifecycle — deliberately still open (2026-07-04)
+
+Shipped in the lifecycle batch: `ayo logout` (+ rolling 90d session TTL),
+`ayo whoami`, `ayo team leave` (owner-blocked — see below), `ayo team remove`
+(creator-only). Consciously deferred:
+
+- **Team delete / rename / owner transfer.** An owner currently CANNOT leave
+  (it would orphan rotate-code and removal); transfer-then-leave is the fix.
+- **Multi-machine session enumeration.** `ayo logout` revokes THIS machine's
+  token only — there's no way to list or revoke your other machines' sessions.
+  Logout's existence will make people assume it; write the endpoint before
+  anyone asks twice.
+- **Kick re-roster race (accepted, small window).** KV membership is eventually
+  consistent: a kicked user's daemon can reconnect through a stale replica
+  within ~60s and `rememberMember` re-creates the DO roster record after
+  remove-member deleted it — leaving a permanent offline ghost on the board
+  (traffic exposure ends once KV converges; the daemon self-heals via me()).
+  Fix shape: a short-lived DO-side tombstone (`removed:<userId>`, ~5 min) that
+  rememberMember checks, or periodic roster reconcile against KV.
+- **Scheduled / auto-expiring status** (`--for 2h`), **sender-visible read
+  state**, **expired-ask cleanup** — from the 2026-07-04 lifecycle audit.

@@ -45,6 +45,7 @@ import { apiError, json, type Env } from "./env.js";
 import { overRateLimit, clientIp } from "./rate-limit.js";
 import {
   authenticate,
+  revokeSession,
   devStubEnabled,
   findOrCreateGithubUser,
   issueSession,
@@ -54,6 +55,8 @@ import { githubDeviceStart, githubDevicePoll, githubGetUser } from "./github.js"
 import { validateWav } from "./sounds.js";
 import {
   addMember,
+  listMemberships,
+  removeMembership,
   countMembers,
   createTeam,
   freshJoinCode,
@@ -360,6 +363,61 @@ export default {
       }
 
       // ── Rotate join code (owner only) — revokes the old code ────────────
+      // ── Logout: revoke the session that made this call ───────────────────
+      if (path === "/v1/auth/logout" && req.method === "POST") {
+        const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+        if (token) await revokeSession(env, token);
+        return json({ ok: true });
+      }
+
+      // ── Leave a team (any member, self only) ────────────────────────────
+      const leaveMatch = path.match(/^\/v1\/teams\/(team_[^/]+)\/leave$/);
+      if (leaveMatch && req.method === "POST") {
+        const teamId = leaveMatch[1] as never;
+        if (!(await getMembership(env, teamId, userId))) {
+          return apiError("not_a_member", "You are not a member of this team.");
+        }
+        // An owner leaving would orphan the team: ownerId would point at a
+        // non-member, making rotate-code and member removal permanently
+        // unusable. Block it until transfer/delete exists.
+        const leaveTeam = await getTeam(env, teamId);
+        if (leaveTeam?.ownerId === userId) {
+          return apiError("forbidden", "You created this team — leaving would orphan it (owner transfer/delete isn't built yet).");
+        }
+        await removeMembership(env, teamId, userId);
+        ctx.waitUntil(removeFromRoster(env, teamId, userId, userId));
+        return json({ ok: true });
+      }
+
+      // ── Remove a member (team creator only) ─────────────────────────────
+      const kickMatch = path.match(/^\/v1\/teams\/(team_[^/]+)\/members\/([^/]+)$/);
+      if (kickMatch && req.method === "DELETE") {
+        const teamId = kickMatch[1] as never;
+        const targetHandle = decodeURIComponent(kickMatch[2]!);
+        const team = await getTeam(env, teamId);
+        if (!team) return apiError("team_not_found", "No team with that id.");
+        if (!(await getMembership(env, teamId, userId))) {
+          return apiError("not_a_member", "You are not a member of this team.");
+        }
+        // Strictly owner-gated — no legacy any-member fallback here: removal is
+        // an act against ANOTHER person, unlike rotate's shared-code hygiene.
+        if (!team.ownerId) {
+          return apiError("forbidden", "This team predates ownership records — member removal isn't available on it.");
+        }
+        if (team.ownerId !== userId) {
+          return apiError("forbidden", "Only the team's creator can remove a member.");
+        }
+        const members = await listMemberships(env, teamId);
+        const target = members.find((m) => m.handle.toLowerCase() === targetHandle.toLowerCase());
+        if (!target) return apiError("not_found", "No member with that handle.");
+        if (target.userId === userId) {
+          return apiError("bad_request", "That's you — use `ayo team leave` instead.");
+        }
+        await removeMembership(env, teamId, target.userId);
+        ctx.waitUntil(removeFromRoster(env, teamId, target.userId, userId));
+        return json({ ok: true });
+      }
+
       const rotateMatch = path.match(/^\/v1\/teams\/(team_[^/]+)\/rotate-code$/);
       if (rotateMatch && req.method === "POST") {
         const teamId = rotateMatch[1] as never;
@@ -688,6 +746,30 @@ async function loadUser(env: Env, userId: string): Promise<PublicUser | null> {
  * after their first DO interaction (daemon connect / send). Best-effort: the
  * roster is also self-healing on first real interaction.
  */
+/** Tell the team DO a member is gone: roster record deleted, live sockets
+ *  dropped. Sent with BLANK x-ayo identity on purpose (like guest-reply):
+ *  the DO re-rosters any identified internal caller, and for self-leave the
+ *  caller IS the person being removed — blank identity means rememberMember
+ *  no-ops and the deletion sticks. Authorization already happened in the
+ *  route handler; `by` rides in the body for future audit only. */
+async function removeFromRoster(env: Env, teamId: string, targetUserId: string, byUserId: string): Promise<void> {
+  try {
+    const stub = env.TEAM.get(env.TEAM.idFromName(teamId));
+    const headers = new Headers({ "content-type": "application/json", "x-ayo-team": teamId });
+    if (env.INTERNAL_SECRET) headers.set("x-ayo-internal", env.INTERNAL_SECRET);
+    const res = await stub.fetch(
+      new Request("https://team/internal/remove-member", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ userId: targetUserId, by: byUserId }),
+      }),
+    );
+    if (!res.ok) console.warn("removeFromRoster: DO returned", res.status, "for team", teamId);
+  } catch {
+    /* KV membership is already gone — the DO roster is advisory for presence */
+  }
+}
+
 async function registerInRoster(env: Env, teamId: string, userId: string, handle: string): Promise<void> {
   try {
     const stub = env.TEAM.get(env.TEAM.idFromName(teamId));

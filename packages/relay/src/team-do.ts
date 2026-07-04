@@ -112,10 +112,11 @@ export class TeamHub implements DurableObject {
     const url = new URL(req.url);
     const path = url.pathname;
     // INVARIANT (ADR 0002): the Worker is the only identity verifier and sets
-    // x-ayo-user/handle on every forwarded call — EXCEPT guest-reply, which
-    // deliberately sends blank identity (rememberMember below no-ops on blank,
-    // and that handler never reads these). Any new internal route must either
-    // require identity or be explicitly blank-safe like guest-reply.
+    // x-ayo-user/handle on every forwarded call — EXCEPT guest-reply and
+    // remove-member, which deliberately send blank identity (rememberMember
+    // below no-ops on blank; for remove-member an identified self-leave caller
+    // would re-roster the very record being deleted). Any new internal route
+    // must either require identity or be explicitly blank-safe like these two.
     const userId = req.headers.get("x-ayo-user") as UserId;
     const handle = req.headers.get("x-ayo-handle") ?? "";
     await this.rememberMember(userId, handle);
@@ -129,6 +130,9 @@ export class TeamHub implements DurableObject {
     // Guest reply from a handoff share page: arrives with EMPTY x-ayo-user/handle
     // (rememberMember above no-ops on blank identity — the roster stays clean).
     if (path === "/internal/guest-reply" && req.method === "POST") return this.handleGuestReply(req);
+    // Leave/kick: the Worker verified authorization; we clean the roster and
+    // drop the removed member's live sockets so they stop receiving instantly.
+    if (path === "/internal/remove-member" && req.method === "POST") return this.handleRemoveMember(req);
     if (path === "/internal/inbox" && req.method === "GET") return this.handleInbox(url, userId, handle);
     if (path === "/internal/members" && req.method === "GET") return this.handleMembers();
     if (path === "/internal/feed" && req.method === "GET") return this.handleFeed(url);
@@ -723,6 +727,23 @@ export class TeamHub implements DurableObject {
     if (ayo.to.includes("*")) return true;
     const h = handle.toLowerCase(); // case-insensitive, matching resolveRecipients
     return ayo.to.some((t) => t.toLowerCase() === h);
+  }
+
+  private async handleRemoveMember(req: Request): Promise<Response> {
+    const input = (await req.json().catch(() => null)) as { userId?: string } | null;
+    const target = input?.userId as UserId | undefined;
+    if (!target) return apiError("bad_request", "userId required.");
+    // Presence first — broadcastPresence no-ops once the record is gone.
+    try {
+      await this.broadcastPresence(target, false);
+    } catch { /* best-effort */ }
+    await this.ctx.storage.delete(`member:${target}`);
+    for (const s of this.socketsForUser(target)) {
+      try {
+        s.close(1000, "removed from team");
+      } catch { /* ignore */ }
+    }
+    return Response.json({ ok: true });
   }
 
   private async rememberMember(userId: UserId, handle: Handle): Promise<void> {

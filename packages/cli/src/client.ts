@@ -102,6 +102,14 @@ export const api = {
   answerAsk: (s: Session, ayoId: string, answer: string) =>
     call<{ ok: true }>(`/v1/ayo/${ayoId}/answer`, { method: "POST", body: { answer }, token: s.token }),
 
+  logout: (s: Session) => call<{ ok: true }>("/v1/auth/logout", { method: "POST", token: s.token }),
+
+  leaveTeam: (s: Session, teamId: string) =>
+    call<{ ok: true }>(`/v1/teams/${teamId}/leave`, { method: "POST", token: s.token }),
+
+  removeMember: (s: Session, teamId: string, handle: string) =>
+    call<{ ok: true }>(`/v1/teams/${teamId}/members/${encodeURIComponent(handle)}`, { method: "DELETE", token: s.token }),
+
   markRead: (s: Session, ayoId: string) =>
     call<{ ok: true }>(`/v1/ayo/${ayoId}/read`, { method: "POST", token: s.token }),
 
