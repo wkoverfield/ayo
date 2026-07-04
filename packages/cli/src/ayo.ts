@@ -15,7 +15,9 @@ import {
   requireSession,
   loadSession,
   resolveHandle,
+  type Session,
 } from "./config.js";
+import { rel } from "./fmt.js";
 import { api, RelayError } from "./client.js";
 import type { SendAyoResponse, PresenceStatus } from "@ayo-dev/core";
 import { captureContext } from "./context.js";
@@ -118,7 +120,10 @@ function requireTeam(cfg: ReturnType<typeof loadConfig>): string {
  * Ayo that went nowhere (a typo'd or not-yet-joined handle used to look like a
  * success). Shared by `send`, `handoff`, and `team` broadcast.
  */
-function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: boolean; self?: boolean } = {}): void {
+async function reportSend(
+  res: SendAyoResponse,
+  opts: { label?: string; broadcast?: boolean; self?: boolean; lookup?: { s: Session; teamId: string } } = {},
+): Promise<void> {
   const label = opts.label ?? "ayo sent";
   const live = res.deliveredTo.length;
   const queued = res.queuedFor.length;
@@ -128,12 +133,34 @@ function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: bo
   if (unknown.length) {
     const names = unknown.map((h) => pc.bold(h)).join(", ");
     console.log(pc.yellow(`⚠ no such teammate: ${names}`) + pc.dim("  — run `ayo who` to see who you can ping"));
+    // Did-you-mean checks the ROSTER first — `ayo mya` almost always means the
+    // teammate maya, and suggesting a command for it steers at the wrong fix.
+    // Best-effort extra round-trip, on the failure path only.
+    let suggested = false;
+    if (opts.lookup) {
+      try {
+        const { members } = await api.members(opts.lookup.s, opts.lookup.teamId);
+        const own = opts.lookup.s.handle.toLowerCase();
+        const handles = members.map((m) => m.handle).filter((h) => h.toLowerCase() !== own);
+        const near = unknown
+          .map((h) => handles.find((c) => levenshtein(h.toLowerCase(), c.toLowerCase()) <= 2))
+          .find(Boolean);
+        if (near) {
+          console.log(pc.dim(`  (did you mean your teammate `) + pc.bold(near) + pc.dim(`? \`ayo ${near} …\`)`));
+          suggested = true;
+        }
+      } catch {
+        /* roster unavailable — fall through to the command hint */
+      }
+    }
     // `ayo answr 1 ship` lands here (near-miss WITH args skips the bare typo
     // guard) — being told "answr isn't a teammate" steers at the wrong fix.
-    const near = unknown
-      .map((h) => HELP_ORDER.find((c) => levenshtein(h.toLowerCase(), c) <= 2))
-      .find(Boolean);
-    if (near) console.log(pc.dim(`  (or did you mean the command \`ayo ${near}\`?)`));
+    if (!suggested) {
+      const near = unknown
+        .map((h) => HELP_ORDER.find((c) => levenshtein(h.toLowerCase(), c) <= 2))
+        .find(Boolean);
+      if (near) console.log(pc.dim(`  (or did you mean the command \`ayo ${near}\`?)`));
+    }
   }
   if (held.length) {
     const names = held.join(", ");
@@ -297,7 +324,7 @@ team
         urgency: opts.urgent ? "urgent" : "normal",
         context: captureContext(),
       });
-      reportSend(res, { label: "team ayo sent", broadcast: true });
+      await reportSend(res, { label: "team ayo sent", broadcast: true });
     } catch (err) {
       fail(err);
     }
@@ -584,12 +611,29 @@ program
       if (pinned.length) {
         console.log(pc.bold(`  ⧗ ${pinned.length} waiting on you`) + pc.dim("  — `ayo agents` to answer"));
       }
+      // Threading: a guest reply (from a handoff share page) carries replyTo —
+      // render WHICH handoff it answers, or the "threaded" promise the share
+      // page makes is invisible to the human on this side of it.
+      const byId = new Map(ayos.map((a) => [a.id, a]));
       for (const a of [...pinned, ...rest]) {
         const where = a.context?.branch ? pc.dim(` ${a.context.repo}@${a.context.branch}`) : "";
-        const mark = isOpenAsk(a) ? pc.yellow("⧗ ") : "";
+        const mark = isOpenAsk(a) ? pc.yellow("⧗ ") : a.urgency === "urgent" ? pc.red("! ") : "";
         const from = a.kind === "ask" && a.from.id === s.userId ? "your agent" : a.from.handle;
-        console.log(`${mark}${pc.bold(pc.cyan(from))}${where}: ${a.body}`);
-        if (a.context?.diffStat) console.log(pc.dim(`   ${a.context.diffStat}`));
+        const age = pc.dim(rel(a.createdAt).padStart(4) + "  ");
+        console.log(`${age}${mark}${pc.bold(pc.cyan(from))}${where}: ${a.body}`);
+        if (a.replyTo) {
+          // Resolve locally when the referenced Ayo is in this inbox; otherwise
+          // the relay stamps guest replies with a `re: "<blocker>"` note (the
+          // handoff's sender never has their own handoff in their inbox).
+          const ref = byId.get(a.replyTo);
+          const tie = ref
+            ? `↳ re: "${ref.body.length > 48 ? `${ref.body.slice(0, 47)}…` : ref.body}"`
+            : a.context?.note?.startsWith('re: "')
+              ? `↳ ${a.context.note}`
+              : "↳ re: an earlier handoff";
+          console.log(pc.dim(`      ${tie}`));
+        }
+        if (a.context?.diffStat) console.log(pc.dim(`      ${a.context.diffStat}`));
       }
       // Viewing the inbox is an explicit human action -> mark read.
       const results = await Promise.allSettled(ayos.map((a) => api.markRead(s, a.id)));
@@ -805,16 +849,27 @@ program
 
     console.log(`relay:   ${cfg.relayUrl}`);
     console.log(`session: ${s ? pc.green(`logged in as ${s.handle}`) : pc.red("not logged in — run `ayo login`")}`);
-    console.log(`team:    ${cfg.activeTeamId ?? pc.dim("none — `ayo team create` or `ayo join`")}`);
 
+    // One me() round-trip does double duty: proves the relay is reachable AND
+    // names the active team (a raw team_… id is machine junk in a human check).
+    let teamName: string | undefined;
+    let relayLine: string | null = null;
     if (s) {
       try {
-        await api.me(s);
-        console.log(pc.green("✓ relay reachable"));
+        const me = await api.me(s);
+        teamName = me.teams.find((t) => t.id === cfg.activeTeamId)?.name;
+        relayLine = pc.green("✓ relay reachable");
       } catch (err) {
-        console.log(pc.red(`✗ relay unreachable: ${(err as Error).message}`));
+        relayLine = pc.red(`✗ relay unreachable: ${(err as Error).message}`);
       }
     }
+    const teamShown = cfg.activeTeamId
+      ? teamName
+        ? `${pc.bold(teamName)} ${pc.dim(`(${cfg.activeTeamId})`)}`
+        : cfg.activeTeamId
+      : pc.dim("none — `ayo team create` or `ayo join`");
+    console.log(`team:    ${teamShown}`);
+    if (relayLine) console.log(relayLine);
 
     // The daemon is the receiver — without it, Ayos never reach this machine.
     console.log(
@@ -914,7 +969,12 @@ Examples:
         urgency: opts.urgent ? "urgent" : "normal",
         context: ctx,
       });
-      reportSend(res, { label: "handoff sent", broadcast, self: !broadcast && to.every((h) => h.toLowerCase() === s.handle.toLowerCase()) });
+      await reportSend(res, {
+        label: "handoff sent",
+        broadcast,
+        self: !broadcast && to.every((h) => h.toLowerCase() === s.handle.toLowerCase()),
+        lookup: { s, teamId },
+      });
       if (ctx?.repo) {
         const bits = [`${ctx.repo}@${ctx.branch ?? "?"}`, `${ctx.changedFiles?.length ?? 0} changed`];
         if (ctx.diff) bits.push("full diff");
@@ -981,7 +1041,11 @@ program
         urgency: opts.urgent ? "urgent" : "normal",
         context: captureContext({ withDiff: opts.withDiff }),
       });
-      reportSend(res, { broadcast, self: !broadcast && to.every((h) => h.toLowerCase() === s.handle.toLowerCase()) });
+      await reportSend(res, {
+        broadcast,
+        self: !broadcast && to.every((h) => h.toLowerCase() === s.handle.toLowerCase()),
+        lookup: { s, teamId },
+      });
     } catch (err) {
       fail(err);
     }

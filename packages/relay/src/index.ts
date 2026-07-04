@@ -630,6 +630,10 @@ async function sendGuestReply(
           guestName,
           message,
           replyTo: share.ayoId ?? null,
+          // The recipient (the handoff's sender) rarely has their own handoff
+          // in their inbox, so a bare replyTo id is unresolvable client-side —
+          // carry the blocker text so "which handoff?" is answerable anywhere.
+          blocker: share.blocker,
         }),
       }),
     );

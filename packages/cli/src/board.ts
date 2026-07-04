@@ -13,6 +13,7 @@ import type { FeedItem, HackathonState, MemberPresence } from "@ayo-dev/core";
 import { loadConfig, requireSession } from "./config.js";
 import { api } from "./client.js";
 import { fmtCountdown } from "./hackathon.js";
+import { rel } from "./fmt.js";
 
 const ENTER_ALT = "\x1b[?1049h\x1b[?25l"; // alternate screen + hide cursor
 const EXIT_ALT = "\x1b[?25h\x1b[?1049l"; // show cursor + leave alternate screen
@@ -21,17 +22,6 @@ const REFRESH_MS = 3000;
 const WIDTH = 66;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-function rel(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "";
-  const s = Math.floor((Date.now() - t) / 1000);
-  if (s < 5) return "now";
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h`;
-}
 
 function truncate(s: string, n: number): string {
   const flat = (s ?? "").replace(/\s+/g, " ").trim();
@@ -63,10 +53,13 @@ function render(team: string, members: MemberPresence[], items: FeedItem[], hack
     const where = ctx?.repo ? pc.blue(`${ctx.repo}@${ctx.branch ?? "?"}`) : pc.dim("—");
     // The status WORD is their availability setting (active/heads-down/…) — for
     // someone who isn't connected, showing "active" reads as a lie next to the
-    // offline dot. Offline + no note = just say offline; a note stays useful.
-    const status = m.statusText
-      ? pc.cyan(`"${truncate(m.statusText, 28)}"`)
-      : pc.dim(m.online ? m.status : "offline");
+    // offline dot. But heads-down/dnd/away are set on purpose and stay true
+    // offline — hide them and a teammate can't see the do-not-disturb signal
+    // before pinging. So: online → the word; offline → "offline", plus the
+    // quiet state when one is set. A note renders alongside, never instead.
+    const quiet = m.status === "heads-down" || m.status === "dnd" || m.status === "away";
+    const word = m.online ? m.status : quiet ? `offline · ${m.status}` : "offline";
+    const status = pc.dim(word) + (m.statusText ? ` ${pc.cyan(`"${truncate(m.statusText, 24)}"`)}` : "");
     const when = lastSeen.has(m.handle) ? pc.dim(rel(lastSeen.get(m.handle)!).padStart(4)) : pc.dim("    ");
     out.push(`  ${dot} ${handle} ${when}  ${where}  ${status}`);
   }

@@ -413,6 +413,7 @@ export class TeamHub implements DurableObject {
       guestName?: string;
       message?: string;
       replyTo?: string | null;
+      blocker?: string;
     } | null;
     const to = typeof input?.to === "string" ? input.to : "";
     const message = typeof input?.message === "string" ? input.message.trim() : "";
@@ -420,6 +421,10 @@ export class TeamHub implements DurableObject {
     if (!to || !message || message.length > 4096) {
       return apiError("bad_request", "A guest reply needs a recipient and 1–4096 characters.");
     }
+    // Human-readable thread reference: the recipient is the handoff's SENDER,
+    // whose own handoff isn't in their inbox — a bare replyTo id would be
+    // unresolvable there. The note names the handoff for humans and agents.
+    const blocker = (typeof input?.blocker === "string" ? input.blocker.trim() : "").slice(0, 120);
     const teamId = req.headers.get("x-ayo-team") as Ayo["teamId"];
     const ayo: Ayo = {
       id: newAyoId(),
@@ -430,6 +435,7 @@ export class TeamHub implements DurableObject {
       body: message,
       urgency: "normal",
       replyTo: (input?.replyTo as Ayo["id"]) ?? null,
+      ...(blocker ? { context: { note: `re: "${blocker}"` } } : {}),
       sound: null,
       expiresAt: null,
       createdAt: new Date().toISOString(),
