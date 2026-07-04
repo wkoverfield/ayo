@@ -66,9 +66,6 @@ body{background:var(--paper);color:var(--ink);font-family:'Sora',-apple-system,B
 .rise{opacity:0;transform:translateY(7px);animation:rise .5s cubic-bezier(.2,.7,.2,1) forwards}
 @keyframes rise{to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.rise{animation:none;opacity:1;transform:none}}
-.brand{display:flex;align-items:center;gap:11px;margin-bottom:24px}
-.brand img{width:40px;height:40px;border-radius:10px;display:block}
-.brand .tag{font-size:12px;color:var(--muted);letter-spacing:.02em}
 .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:15px}
 .avatar{width:34px;height:34px;border-radius:50%;background:var(--coral);color:#FDEDE7;font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .who{font-size:13.5px;color:var(--ink2)}
@@ -167,7 +164,8 @@ function shell(inner: string): string {
   );
 }
 
-const HEADER = `<div class="brand rise"><img src="${AYO_LOGO_DATA_URI}" alt="Ayo" width="40" height="40"><span class="tag">a handoff for you</span></div>`;
+// The Ayo mark lives only in the footer — the pages open on their own content
+// (who handed off to whom, the confirmation, the error), not on the tool.
 const FOOTER = `<div class="foot rise"><img src="${AYO_LOGO_DATA_URI}" alt=""> Sent with <a href="${REPO_URL}">Ayo</a> — attention pings from inside your terminal &amp; agents</div>`;
 
 /** Render a live handoff. Every `${}` is an escaped value or a constant.
@@ -233,7 +231,6 @@ export function renderHandoffPage(share: HandoffShare, token: string): string {
     </form></div>`;
 
   const body = `
-    ${HEADER}
     <div class="eyebrow rise"><div class="avatar" aria-hidden="true">${escapeHtml(initials(name))}</div><div class="who"><b>${from}</b> <span class="h">@${handle}</span> handed off work to you<br>on <b>${team}</b></div></div>
     <h1 class="rise">${escapeHtml(share.blocker)}</h1>
     <div class="rise"><span class="expiry">${escapeHtml(timeLeft(share.expiresAt))}</span></div>
@@ -263,7 +260,6 @@ export function renderReplySentPage(share: HandoffShare, guestName: string, mess
     ? `<div class="card rise"><div class="lbl">Your reply</div><div class="note">${escapeHtml(message)}</div></div>`
     : "";
   const body = `
-    ${HEADER}
     <div class="sent rise"><div class="check">✓</div><div><div class="sent-h">Sent — ${from} will see it in their terminal</div><div class="sent-sub">Threaded to this handoff, from &ldquo;${guest} (via link)&rdquo;.</div></div></div>
     ${replyEcho}
     <div class="cta rise"><div class="lbl">Keep the loop going</div><div class="cta-h">Want ${from}'s reply to land where <em>you</em> work?</div>
@@ -286,7 +282,6 @@ export function renderReplyErrorPage(token: string, message: string, draft?: str
     ? `<a href="/h/${token}">← Back to the handoff</a> — your reply is shown above, copy it first.`
     : `<a href="/h/${token}">← Back to the handoff</a> — your reply isn't saved, so copy it before you retry.`;
   const body = `
-    ${HEADER}
     <div class="sent rise"><div class="check" style="background:#A63A1B">!</div><div><div class="sent-h">That didn't go through</div><div class="sent-sub">${escapeHtml(message)}</div></div></div>
     ${draftCard}
     <div class="card rise"><div class="note">${backNote}</div></div>
@@ -298,7 +293,6 @@ export function renderReplyErrorPage(token: string, message: string, draft?: str
 /** Shown when a token is unknown or its KV entry has expired. */
 export function renderExpiredPage(): string {
   const body = `
-    ${HEADER}
     <h1 class="rise">This handoff link has expired.</h1>
     <div class="card rise"><div class="note">Handoff links are short-lived by design. Ask whoever sent it to share a fresh one with <code>ayo handoff</code>.</div></div>
     ${FOOTER}
