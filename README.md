@@ -268,6 +268,17 @@ pnpm -r build
 pnpm dev:relay      # local Worker + Durable Object via wrangler
 ```
 
+## Contributing
+
+Contributions are welcome — a bug report, a fix, a notification path on a
+platform I got wrong, or a new agent host for the MCP server. Ayo is opinionated
+and has a few load-bearing properties (truthful output, the relay as the only
+identity boundary, no LLM calls, a sidechannel not a second inbox); see
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to run it locally and what fits. Open
+an issue first for anything touching the relay or the wire protocol.
+
+Found a security issue? Please report it privately — see [SECURITY.md](SECURITY.md).
+
 ## License
 
 MIT
