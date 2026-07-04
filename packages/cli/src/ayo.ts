@@ -118,7 +118,7 @@ function requireTeam(cfg: ReturnType<typeof loadConfig>): string {
  * Ayo that went nowhere (a typo'd or not-yet-joined handle used to look like a
  * success). Shared by `send`, `handoff`, and `team` broadcast.
  */
-function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: boolean } = {}): void {
+function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: boolean; self?: boolean } = {}): void {
   const label = opts.label ?? "ayo sent";
   const live = res.deliveredTo.length;
   const queued = res.queuedFor.length;
@@ -148,11 +148,16 @@ function reportSend(res: SendAyoResponse, opts: { label?: string; broadcast?: bo
   } else if (unknown.length === 0) {
     // A real send that reached no one. For a DIRECTED send that's a failure
     // (exit 1 below) — mark it like one, don't whisper it. An empty-room
-    // broadcast stays a gentle nudge (nothing was mis-addressed).
+    // broadcast stays a gentle nudge (nothing was mis-addressed). In practice
+    // the directed case means every named handle was the sender (the relay
+    // skips non-ask self-pings; anything else lands in unknownRecipients) —
+    // when the caller confirms that, say so instead of a wrong-trail hint.
     console.log(
       opts.broadcast
         ? pc.yellow("· nobody to reach yet — invite a teammate with a join code")
-        : pc.red("✗ reached no one") + pc.dim("  — check who's on the team with `ayo who`"),
+        : opts.self
+          ? pc.red("✗ reached no one") + pc.dim("  — that's your own handle; self-pings are skipped (your agent's asks still come through)")
+          : pc.red("✗ reached no one") + pc.dim("  — check who's on the team with `ayo who`"),
     );
   }
   // (reached 0 AND unknown.length > 0 — the warning above already explained it.)
@@ -367,8 +372,9 @@ program
 
 // ── webhook (inbound webhooks: one curl → Ayo) ───────────────────────────────
 // `webhook`, not `hook`: `ayo hooks` (agent wiring) already exists, and a one-
-// keystroke gap between two different concepts is a footgun. `hook` stays as a
-// hidden alias so nothing anyone learned breaks.
+// keystroke gap between two different concepts is a footgun. `hook` stays as an
+// alias (visible in help as webhook|hook — deliberate, so people who learned
+// `hook` can see where it went) and keeps working.
 const hook = program
   .command("webhook")
   .alias("hook")
@@ -558,7 +564,7 @@ Examples:
 // ── inbox ────────────────────────────────────────────────────────────────────
 program
   .command("inbox")
-  .description("Read your Ayos — open asks pin to the top; viewing marks them read")
+  .description("Read your Ayos — open asks pin to the top")
   .option("--unread", "only unread", false)
   .option("--json", "raw JSON for agents", false)
   .action(async (opts) => {
@@ -908,7 +914,7 @@ Examples:
         urgency: opts.urgent ? "urgent" : "normal",
         context: ctx,
       });
-      reportSend(res, { label: "handoff sent", broadcast });
+      reportSend(res, { label: "handoff sent", broadcast, self: !broadcast && to.every((h) => h.toLowerCase() === s.handle.toLowerCase()) });
       if (ctx?.repo) {
         const bits = [`${ctx.repo}@${ctx.branch ?? "?"}`, `${ctx.changedFiles?.length ?? 0} changed`];
         if (ctx.diff) bits.push("full diff");
@@ -975,7 +981,7 @@ program
         urgency: opts.urgent ? "urgent" : "normal",
         context: captureContext({ withDiff: opts.withDiff }),
       });
-      reportSend(res);
+      reportSend(res, { broadcast, self: !broadcast && to.every((h) => h.toLowerCase() === s.handle.toLowerCase()) });
     } catch (err) {
       fail(err);
     }

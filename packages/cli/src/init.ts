@@ -186,9 +186,10 @@ export async function runInit(opts: InitOpts): Promise<void> {
         }
       }
     } else if (want("team") && session && !rl && !loadConfig().activeTeamId) {
-      // Non-interactive runs can't prompt — say what was skipped instead of
-      // ending on a silent gap ("am I set up?").
-      console.log(pc.dim("\n  (skipped team setup — no TTY. `ayo team create <name>` or `ayo join <code>` later.)"));
+      // Non-interactive runs (-y or no TTY) can't prompt — say what was
+      // skipped instead of ending on a silent gap ("am I set up?"). The
+      // next-steps block right below carries the how.
+      console.log(pc.dim("\n  (skipped team setup — non-interactive run.)"));
     }
 
     printNextSteps(dry);
