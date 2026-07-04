@@ -192,7 +192,7 @@ export async function runInit(opts: InitOpts): Promise<void> {
       console.log(pc.dim("\n  (skipped team setup — non-interactive run.)"));
     }
 
-    printNextSteps(dry);
+    printNextSteps(dry, want("daemon") || want("mcp") || want("hooks"));
   } finally {
     rl?.close();
   }
@@ -260,7 +260,7 @@ async function pickSound(session: Session, rl: Rl | null, auto: boolean): Promis
   return { kind: "preset", id: chosen };
 }
 
-function printNextSteps(dry: boolean): void {
+function printNextSteps(dry: boolean, wired: boolean): void {
   if (dry) {
     console.log(pc.dim("\n  (dry run complete — re-run without --dry-run to apply)"));
     return;
@@ -275,7 +275,8 @@ function printNextSteps(dry: boolean): void {
   console.log("  Or from the terminal: " + pc.cyan("ayo <teammate> \"deploy's cooked\""));
   console.log(pc.dim("  Hand off with context + a shareable link:  ") + pc.cyan("ayo handoff <teammate>"));
   console.log(pc.dim("  Turn GitHub reviews/@mentions into Ayos:    ") + pc.cyan("ayo webhook create --github"));
-  console.log(pc.dim("  Restart your agent once so the new wiring takes effect."));
+  // Only earned when a wiring step actually ran (--only login,sound didn't).
+  if (wired) console.log(pc.dim("  Restart your agent once so the new wiring takes effect."));
   console.log(pc.dim("  Anything feel off? `ayo doctor` checks the whole chain."));
 }
 

@@ -63,7 +63,9 @@ export interface AyoContext {
   /** Set by the CLI when `diff` was truncated to fit the cap. */
   diffTruncated?: boolean;
   links?: string[];
-  /** Optional agent-generated handoff summary. */
+  /** Optional context note. Outbound: an agent-authored summary (MCP `note`
+   *  param). Inbound guest replies: the relay stamps `re: "<blocker>"` so the
+   *  reply names the handoff it answers (CLI renders it as the thread tie). */
   note?: string;
 }
 
