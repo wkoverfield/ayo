@@ -1,8 +1,10 @@
 /**
- * The one relay HTTP transport, shared by the CLI and the MCP server. Speaks
- * the relay's { error: { code, message } } contract, redacts the bearer token
- * from anything that might reflect it, and throws a typed RelayError so
- * callers can branch on `code` instead of parsing prose.
+ * The shared relay JSON transport for the CLI and the MCP server. (A few
+ * binary paths — WAV upload, sound-clip download — keep bespoke fetches in
+ * the CLI; see docs/FOLLOWUPS.md.) Speaks the relay's
+ * { error: { code, message } } contract, redacts the bearer token from
+ * anything that might reflect it, and throws a typed RelayError so callers
+ * can branch on `code` instead of parsing prose.
  *
  * Uses global fetch (Node 20+). Under `@ayo-dev/core/node` by policy — the
  * relay itself never calls itself, and keeping all Node-flavored code on one
@@ -36,14 +38,16 @@ export async function relayCall<T>(relayUrl: string, path: string, opts: RelayCa
   const text = await res.text();
   if (!res.ok) {
     // Prefer the relay's structured error; fall back to raw text (a proxy or
-    // tunnel can answer with plain HTML/text that isn't JSON).
+    // tunnel can answer with plain HTML/text that isn't JSON). code and
+    // message are honored independently — a body carrying only a code still
+    // yields that code with an "HTTP <status>" message.
     let code = "http_error";
     let msg = text || `HTTP ${res.status}`;
     try {
       const j = JSON.parse(text) as { error?: { code?: string; message?: string } };
-      if (j?.error?.message) {
-        msg = j.error.message;
+      if (j?.error) {
         code = j.error.code ?? code;
+        msg = j.error.message ?? `HTTP ${res.status}`;
       }
     } catch {
       /* not JSON — use raw */

@@ -4,9 +4,10 @@
  *
  * Node-only (`node:fs`/`node:os`) — lives under the `@ayo-dev/core/node`
  * subpath so the relay Worker, which imports the root export, never pulls in
- * Node builtins. Policy stays with the callers: what to do when a session is
- * missing (the CLI exits with a hint, MCP throws for the agent) and how
- * AYO_RELAY_URL ranks against the config file are caller decisions.
+ * Node builtins. Missing-session policy stays with the callers (the CLI exits
+ * with a hint, MCP throws for the agent). relayUrl precedence: loadConfig
+ * itself is file-beats-env (AYO_RELAY_URL only seeds the default); the MCP
+ * server inverts that at its call site.
  */
 
 import { homedir } from "node:os";
@@ -17,7 +18,8 @@ import { DEFAULT_RELAY_URL } from "../api.js";
 /**
  * Where Ayo keeps session/config/inbox/daemon files. Defaults to ~/.ayo;
  * override with AYO_DIR to run multiple personas on one machine (handy for
- * self-testing and demos: `AYO_DIR=/tmp/ayo-maya ayo ...`).
+ * self-testing and demos: `AYO_DIR=/tmp/ayo-maya ayo ...`). The env var is
+ * read once at module load — a process can't switch personas mid-flight.
  */
 export const AYO_DIR = process.env.AYO_DIR ? resolve(process.env.AYO_DIR) : join(homedir(), ".ayo");
 const CONFIG_PATH = join(AYO_DIR, "config.json");

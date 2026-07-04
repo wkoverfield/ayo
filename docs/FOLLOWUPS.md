@@ -263,3 +263,24 @@ agents see it via `read_inbox` (raw JSON), but the CLI inbox renders replies as
 flat pings — no visual tie back to the handoff. Surface the thread in `ayo
 inbox` (e.g. "↳ re: your handoff 'oauth is cooked…'") so the confirmation
 page's "threaded" claim is visible to humans, not just agents.
+
+## Bespoke fetches left outside the shared transport (core/node consolidation)
+
+The CLI+MCP relay transport was consolidated into `@ayo-dev/core/node`
+(`relayCall` + `RelayError`), but three call sites intentionally kept raw
+`fetch`:
+
+- `cli/client.ts` `uploadSound` — sends a raw WAV body (`relayCall` JSON-encodes).
+  It also lacks the transport's token redaction and non-JSON-error hardening,
+  so it still throws a bare SyntaxError if a proxy answers with HTML.
+- `cli/agent.ts` `refreshInbox` — needs an AbortSignal (1.5s budget) which
+  `RelayCallOpts` doesn't carry.
+- `cli/sound.ts` clip download — binary response, fair exception.
+
+Fix by extending `RelayCallOpts` with `signal` and a raw-body mode, then folding
+the first two in. Also same-shape-but-rightly-left: `pkgVersion()` in
+`cli/ayo.ts` and `mcp/index.ts` (each must read its own package.json relative to
+its own module; sharing needs an `import.meta.url`-parameterized helper).
+
+The relay-must-not-import-`core/node` rule is enforced in CI (grep step in
+`ci.yml`) — keep that step if the workflow is ever restructured.

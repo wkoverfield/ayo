@@ -1,7 +1,7 @@
 {
   "name": "@ayo-dev/core",
   "version": "0.2.0",
-  "description": "Shared message schema, wire protocol, and types for Ayo.",
+  "description": "Shared message schema, wire protocol, and types for Ayo — plus Node-only client runtime under ./node.",
   "license": "MIT",
   "author": "Wilson Overfield",
   "homepage": "https://github.com/wkoverfield/ayo#readme",
