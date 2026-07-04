@@ -20,9 +20,9 @@ this." Git and your existing tools stay the source of truth. Ayo never calls an
 LLM, and it forgets your 1:1 pings on purpose. It is a sidechannel, not a second
 inbox to keep up with.
 
-<!-- Demo GIF: `vhs scripts/demo.tape` writes docs/demo.gif, then uncomment:
-<p align="center"><img src="docs/demo.gif" alt="wilson runs 'ayo handoff maya' in one pane; the link prints, maya's pane shows a native toast and 'ayo inbox' rendering the branch, files, and blocker; maya replies and it lands back in wilson's terminal." width="720"></p>
--->
+<p align="center"><img src="docs/demo.gif" alt="A terminal session: 'ayo inbox' shows a teammate's handoff carrying its branch, changed files, and diff stat, plus a pinned question from your own agent; 'ayo agents' shows the blocked question with ready answer commands; 'ayo answer 1 backoff' unblocks it; then 'ayo handoff maya' prints a share link that works for anyone, even before they're on Ayo." width="820"></p>
+
+<sub>Regenerate the gif with `pnpm -r build && scripts/record-demo.sh` (needs <a href="https://github.com/charmbracelet/vhs">vhs</a>). The gif shows the terminal surfaces; the shareable handoff <em>page</em> a non-user opens is under <a href="#hand-off-with-a-link">Hand off with a link</a>.</sub>
 
 ```bash
 npm install -g @ayo-dev/cli
@@ -82,6 +82,8 @@ ayo handoff maya "stuck on the oauth callback"
   ✓ handoff sent
   ✓ share link  https://…/h/AbCd…      # works for anyone, expires on its own
 ```
+
+<p align="center"><img src="docs/handoff-page.png" alt="The handoff page a recipient opens: the sender and blocker up top, a work-context card with the repo, branch, commit, diff stat, and changed files, a reply box that needs no account, and an install-and-join call to action." width="440"></p>
 
 Drop it in a text, a PR comment, wherever. Whoever opens it gets your full
 context and can reply right from the page, no account and no install. Their
