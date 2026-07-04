@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/hero.png" alt="Ayo: reach a teammate without leaving your terminal or your agent. Ping them, or hand off your work with its git context." width="840">
+<img src="docs/hero.png" alt="Ayo: keep communicating and keep coding. Terminal-native pings for small teams, git context attached." width="840">
 
 [![CI](https://github.com/wkoverfield/ayo/actions/workflows/ci.yml/badge.svg)](https://github.com/wkoverfield/ayo/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@ayo-dev/cli)](https://www.npmjs.com/package/@ayo-dev/cli)
@@ -9,16 +9,16 @@
 
 </div>
 
-Ayo is a command-line tool for reaching a teammate without leaving your terminal
-or your coding agent. You ping someone, or hand off your work with its git
-context, and it lands where they are already working: a native notification,
-their inbox, or dropped into their agent's next turn.
+Ayo keeps a small team in sync without anyone leaving their terminal or their
+coding agent. You ping a teammate, it lands where they already are (a native
+notification, their inbox, or dropped into their agent's next turn), and their
+reply lands back in yours. Nobody alt-tabs, nobody loses their place.
 
-It captures the context for you (repo, branch, changed files, diff stat, the
-blocker), so a handoff carries what you were doing and not just "hey, look at
-this." Git and your existing tools stay the source of truth. Ayo never calls an
-LLM, and it forgets your 1:1 pings on purpose. It is a sidechannel, not a second
-inbox to keep up with.
+Every ping carries your git context automatically (repo, branch, changed
+files), so "the auth endpoint is live" arrives with the what. Git and your
+existing tools stay the source of truth. Ayo never calls an LLM, and it forgets
+your 1:1 pings on purpose. It is a sidechannel, not a second inbox to keep up
+with. Built for teams of about five or fewer who live in their terminals.
 
 ```bash
 npm install -g @ayo-dev/cli
@@ -32,30 +32,32 @@ the rest is `ayo <name> "..."`.
 
 ## The problem
 
-It is 2am and the demo is on fire. You want to pull in a teammate, so you
-alt-tab to Slack, screenshot your terminal, paste the branch name, explain which
-service, and by the time they answer you have lost your place in the thing that
-was actually broken.
+You are deep in the backend, Maya is deep in the UI, and she has been blocked on
+your auth endpoint for an hour. It just went live. Now you get to alt-tab to
+Slack, find the channel, type the message, and lose your place. When she sees
+it twenty minutes later, she alt-tabs out of her own flow to ask which branch.
+Two people out of flow to move one sentence.
 
-The message was never the hard part. The context was. Ayo sends the context with
-the message and keeps you in the terminal where the fire is:
+Your agent can write the endpoint. It cannot tell Maya she is unblocked. Only
+you know that, the moment it becomes true. Ayo moves that moment from your flow
+to hers, context attached, without either of you leaving the terminal:
 
 ```bash
-ayo maya "demo deploy is cooked, can you tap in?"    # ping one person
-ayo team "standup in 5"                              # tell everyone
-ayo handoff maya "stuck on the oauth callback"       # hand off with context + a link
+ayo maya "auth endpoint is live, you're unblocked"   # lands as a toast + in her agent
+ayo team "schema changed, pull before you build"     # tell everyone
+ayo maya --urgent "prod deploy is red"               # break through heads-down
 ```
 
 Or, from inside Codex or Claude Code, since you are probably already in there:
 
-> _"Ayo Maya with my current branch, changed files, and the blocker."_
+> _"Ayo Maya that the endpoint's live and include my current branch."_
 
 ## What it does
 
 - **Ping with context.** A message carries your repo, branch, and changed files
   automatically, so "can you look?" arrives with the what.
-- **Hand off with a link.** Every handoff becomes a page anyone can open, even
-  without Ayo, and reply from. A Loom-style link for a blocker.
+- **Respect focus.** Heads-down holds non-urgent pings for the inbox; urgent
+  breaks through. The board shows who is reachable before you ping.
 - **Answer your own agents.** When your agent hits a fork it should not take
   alone (deploy to prod, pick an approach), it asks you and waits, instead of
   guessing and moving on.
@@ -64,26 +66,19 @@ Or, from inside Codex or Claude Code, since you are probably already in there:
   not read.
 - **See the board.** One pane: who is online, who is heads-down, which handoffs
   are still open.
+- **Hand off when you need to.** `ayo handoff` sends your branch, changed files,
+  and blocker, plus a link that even someone not on Ayo yet can open and reply
+  from.
 - **Agent-native.** An MCP server lets your agent ping, hand off, read your
   inbox, and ask on your behalf.
 
-## Hand off with a link
+## Handing off
 
-Every `ayo handoff` mints a shareable link, a page that renders your branch,
-changed files, diff stat, and the blocker for anyone, even before they are on
-Ayo:
-
-```bash
-ayo handoff maya "stuck on the oauth callback"
-  ✓ handoff sent
-  ✓ share link  https://…/h/AbCd…      # works for anyone, expires on its own
-```
-
-Drop it in a text, a PR comment, wherever. Whoever opens it gets your full
-context and can reply right from the page, no account and no install. Their
-answer lands in your terminal, threaded to the handoff. The install nudge comes
-after they reply, and the embedded join code names you as the inviter, so
-whoever picks it up starts on your team instead of in an empty room.
+When you do need to put your work in someone else's hands, `ayo handoff maya
+"the deploy is yours"` sends your branch, changed files, and diff stat, and
+mints a shareable page that renders all of it. That page is for the teammate
+who hasn't installed Ayo yet: they can read the context and reply right from
+it, no account needed. Their answer lands in your terminal.
 
 Handoffs only attach the full diff when you pass `--with-diff`, since a diff can
 carry uncommitted secrets. `--no-code` shares context without granting join
@@ -266,14 +261,14 @@ pnpm dev:relay      # local Worker + Durable Object via wrangler
 
 ## Contributing
 
-Contributions are welcome — a bug report, a fix, a notification path on a
+Contributions are welcome: a bug report, a fix, a notification path on a
 platform I got wrong, or a new agent host for the MCP server. Ayo is opinionated
 and has a few load-bearing properties (truthful output, the relay as the only
 identity boundary, no LLM calls, a sidechannel not a second inbox); see
 [CONTRIBUTING.md](CONTRIBUTING.md) for how to run it locally and what fits. Open
 an issue first for anything touching the relay or the wire protocol.
 
-Found a security issue? Please report it privately — see [SECURITY.md](SECURITY.md).
+Found a security issue? Please report it privately, via [SECURITY.md](SECURITY.md).
 
 ## License
 
