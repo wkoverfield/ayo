@@ -122,26 +122,32 @@ export default {
         // Honeypot: a hidden field humans never see. Bots that fill it get a
         // convincing success page and nothing is sent.
         const honeypot = (form?.get("website") ?? "").toString();
-        if (honeypot) return sharePage(renderReplySentPage(share, name), 200, false);
+        // Echo caps: the form's maxlength is client-side only, so a crafted
+        // POST can carry an arbitrarily large message. Never render more than
+        // the legit maximum back into a page (real browser users can't exceed
+        // it, so nothing is lost).
+        const echo = message.slice(0, MAX_LINK_REPLY_LENGTH);
+        if (honeypot) return sharePage(renderReplySentPage(share, name, echo), 200, false);
         // A browser is on the other end of this form — every failure renders a
-        // branded page with a way back, never the API's JSON contract.
+        // branded page with a way back (echoing their draft so the failure
+        // can't eat it), never the API's JSON contract.
         if (!message || message.length > MAX_LINK_REPLY_LENGTH) {
-          return sharePage(renderReplyErrorPage(token, `A reply needs 1–${MAX_LINK_REPLY_LENGTH} characters.`), 400, false);
+          return sharePage(renderReplyErrorPage(token, `A reply needs 1–${MAX_LINK_REPLY_LENGTH} characters.`, echo || undefined), 400, false);
         }
         if (await overRateLimit(env, `reply:${token}`, 5, 60)) {
-          return sharePage(renderReplyErrorPage(token, "This handoff is getting a lot of replies — wait a minute and try again."), 429, false);
+          return sharePage(renderReplyErrorPage(token, "This handoff is getting a lot of replies — wait a minute and try again.", message), 429, false);
         }
         const res = await sendGuestReply(env, share, name, message);
         if (!res.ok) {
-          return sharePage(renderReplyErrorPage(token, "Something went wrong on our side — try again in a moment."), 502, false);
+          return sharePage(renderReplyErrorPage(token, "Something went wrong on our side — try again in a moment.", message), 502, false);
         }
         // Truthful to the GUEST too: a reply that resolved to no recipient (the
         // sender left the team / renamed) must not show a fake "Sent ✓".
         if (res.delivered === 0) {
           console.warn(`guest reply undeliverable: share sender ${share.from.handle} not on roster (team ${share.teamId})`);
-          return sharePage(renderReplyErrorPage(token, `${share.from.name || share.from.handle} doesn't seem to be reachable on this team anymore.`), 410, false);
+          return sharePage(renderReplyErrorPage(token, `${share.from.name || share.from.handle} doesn't seem to be reachable on this team anymore.`, message), 410, false);
         }
-        return sharePage(renderReplySentPage(share, name), 200, false);
+        return sharePage(renderReplySentPage(share, name, message), 200, false);
       }
 
       // ── Inbound webhook (no session — "one curl → Ayo") ─────────────────
