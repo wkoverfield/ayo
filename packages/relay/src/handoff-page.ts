@@ -69,7 +69,6 @@ body{background:var(--paper);color:var(--ink);font-family:'Sora',-apple-system,B
 .brand{display:flex;align-items:center;gap:11px;margin-bottom:24px}
 .brand img{width:40px;height:40px;border-radius:10px;display:block}
 .brand .tag{font-size:12px;color:var(--muted);letter-spacing:.02em}
-.brand .tag a{color:var(--ink2);font-weight:500;text-decoration:underline;text-underline-offset:2px}
 .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:15px}
 .avatar{width:34px;height:34px;border-radius:50%;background:var(--coral);color:#FDEDE7;font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .who{font-size:13.5px;color:var(--ink2)}
@@ -168,7 +167,7 @@ function shell(inner: string): string {
   );
 }
 
-const HEADER = `<div class="brand rise"><img src="${AYO_LOGO_DATA_URI}" alt="Ayo" width="40" height="40"><span class="tag">a handoff for you · sent with <a href="${REPO_URL}">Ayo</a> (open source)</span></div>`;
+const HEADER = `<div class="brand rise"><img src="${AYO_LOGO_DATA_URI}" alt="Ayo" width="40" height="40"><span class="tag">a handoff for you</span></div>`;
 const FOOTER = `<div class="foot rise"><img src="${AYO_LOGO_DATA_URI}" alt=""> Sent with <a href="${REPO_URL}">Ayo</a> — attention pings from inside your terminal &amp; agents</div>`;
 
 /** Render a live handoff. Every `${}` is an escaped value or a constant.
