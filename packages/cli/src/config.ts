@@ -26,6 +26,8 @@ export {
 /** Daemon runtime files, shared by ayod, the controller, and the OS service. */
 export const DAEMON_PID_PATH = join(AYO_DIR, "daemon.pid");
 export const DAEMON_LOG_PATH = join(AYO_DIR, "ayod.log");
+/** {pid, version} written by ayod on boot — lets doctor spot a stale service. */
+export const DAEMON_META_PATH = join(AYO_DIR, "daemon.meta.json");
 
 export function requireSession(): Session {
   const s = loadSession();

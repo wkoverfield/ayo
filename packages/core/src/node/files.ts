@@ -12,7 +12,7 @@
 
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import { DEFAULT_RELAY_URL } from "../api.js";
 
 /**
@@ -61,7 +61,11 @@ export function loadConfig(): Config {
 
 export function saveConfig(cfg: Config): void {
   ensureDir();
-  writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  // Write-then-rename: the daemon re-parses this file every supervise tick,
+  // and `team switch`/`join` write it — a torn read must be impossible.
+  const tmp = `${CONFIG_PATH}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+  renameSync(tmp, CONFIG_PATH);
 }
 
 export function loadSession(): Session | null {

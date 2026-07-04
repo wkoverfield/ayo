@@ -10,6 +10,7 @@ import { Command, Help } from "commander";
 import pc from "picocolors";
 import {
   AYO_DIR,
+  DAEMON_META_PATH,
   loadConfig,
   saveConfig,
   requireSession,
@@ -1007,11 +1008,22 @@ program
     if (relayLine) console.log(relayLine);
 
     // The daemon is the receiver — without it, Ayos never reach this machine.
-    console.log(
-      isDaemonAlive()
-        ? pc.green("✓ daemon running (ayod)")
-        : pc.yellow("⚠ daemon not running — `ayo daemon install` (or `ayo daemon start`)"),
-    );
+    // Version matters: after an npm upgrade the SERVICE keeps running the old
+    // ayod until restarted, silently missing new behavior (e.g. multi-team).
+    if (isDaemonAlive()) {
+      let dv: string | undefined;
+      try {
+        dv = (JSON.parse(readFileSync(DAEMON_META_PATH, "utf8")) as { version?: string }).version;
+      } catch {
+        /* older daemon wrote no meta */
+      }
+      const skew = dv && dv !== pkgVersion();
+      console.log(pc.green(`✓ daemon running (ayod${dv ? ` v${dv}` : ""})`));
+      if (skew) console.log(pc.yellow(`⚠ daemon is v${dv} but the CLI is v${pkgVersion()} — restart it: \`ayo daemon stop && ayo daemon start\``));
+      else if (!dv) console.log(pc.dim("  (pre-0.4 daemon — restart it once to pick up multi-team receiving)"));
+    } else {
+      console.log(pc.yellow("⚠ daemon not running — `ayo daemon install` (or `ayo daemon start`)"));
+    }
 
     // Where Ayo is (or isn't) wired into your agents.
     console.log(pc.bold("\nagent wiring:"));

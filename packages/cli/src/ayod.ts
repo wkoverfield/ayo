@@ -28,7 +28,7 @@ import {
 import WebSocket from "ws";
 import type { ServerFrame, AckFrame } from "@ayo-dev/core";
 import { PROTOCOL_VERSION } from "@ayo-dev/core";
-import { AYO_DIR, DAEMON_LOG_PATH, DAEMON_PID_PATH, loadConfig, loadSession } from "./config.js";
+import { AYO_DIR, DAEMON_LOG_PATH, DAEMON_META_PATH, DAEMON_PID_PATH, loadConfig, loadSession } from "./config.js";
 import { api } from "./client.js";
 import { loadInbox, upsertInbox } from "./inbox-store.js";
 import { notifyAyo } from "./notify.js";
@@ -89,11 +89,22 @@ const sockets = new Map<string, TeamSocket>(); // teamId -> live socket
 /** teamId -> team name, refreshed from me() — used to badge multi-team toasts. */
 const teamNames = new Map<string, string>();
 let timer: ReturnType<typeof setTimeout> | null = null;
+let timerAt = Infinity; // when the pending tick fires — earliest wakeup wins
 let supervising = false; // supervise() is async now; never let two ticks overlap
 
 function schedule(ms: number): void {
+  // Earliest-wins: a 30s steady-state tick must never CLOBBER a 1s reconnect
+  // wakeup another socket just asked for (and vice versa an early wakeup may
+  // replace a later one).
+  const at = Date.now() + ms;
+  if (timer && at >= timerAt) return;
   if (timer) clearTimeout(timer);
-  timer = setTimeout(() => void supervise(), ms);
+  timerAt = at;
+  timer = setTimeout(() => {
+    timer = null;
+    timerAt = Infinity;
+    void supervise();
+  }, ms);
 }
 
 function wsUrl(relayUrl: string, teamId: string): string {
@@ -144,7 +155,7 @@ function openSocket(token: string, relayUrl: string, teamId: string, handle: str
     // replaced it). Remember the grown backoff so retries actually back off.
     if (s && s.ws === sock) {
       sockets.delete(teamId);
-      backoffMemory.set(teamId, Math.min(s.backoff * 2, 30_000));
+      backoffMemory.set(teamId, { delay: Math.min(s.backoff * 2, 30_000), nextAt: Date.now() + s.backoff });
       log(`${teamNames.get(teamId) ?? teamId}: disconnected; reconnecting in ${s.backoff}ms`);
       schedule(s.backoff); // supervise reconciles everything with the latest config
     }
@@ -152,9 +163,10 @@ function openSocket(token: string, relayUrl: string, teamId: string, handle: str
   sock.on("error", (err) => log(`${teamId}: socket error: ${err.message}`));
 }
 
-/** Per-team reconnect delay that survives the socket's Map entry (grown on
- *  close, consumed on the next open, reset to 1s on a successful connect). */
-const backoffMemory = new Map<string, number>();
+/** Per-team reconnect state that survives the socket's Map entry: the grown
+ *  delay AND when the next attempt is allowed — so one team's 1s retry can't
+ *  make supervise hammer another team that's meant to be waiting 30s. */
+const backoffMemory = new Map<string, { delay: number; nextAt: number }>();
 
 /**
  * Single control loop: reconcile the live sockets with the current identity and
@@ -207,17 +219,23 @@ async function supervise(): Promise<void> {
         closeSocket(teamId);
       }
     }
+    const now = Date.now();
     for (const teamId of want) {
-      if (!sockets.has(teamId)) {
-        const memo = backoffMemory.get(teamId);
-        openSocket(session.token, cfg.relayUrl, teamId, session.handle);
-        if (memo) {
-          const s = sockets.get(teamId);
-          if (s) s.backoff = memo;
-        }
+      if (sockets.has(teamId)) continue;
+      const memo = backoffMemory.get(teamId);
+      if (memo && memo.nextAt > now) {
+        schedule(memo.nextAt - now); // not yet — wake up when ITS backoff matures
+        continue;
+      }
+      openSocket(session.token, cfg.relayUrl, teamId, session.handle);
+      if (memo) {
+        const s = sockets.get(teamId);
+        if (s) s.backoff = memo.delay;
         backoffMemory.delete(teamId);
       }
     }
+    // Prune memory for teams we no longer belong to (bounded, but be tidy).
+    for (const teamId of [...backoffMemory.keys()]) if (!want.has(teamId)) backoffMemory.delete(teamId);
     schedule(SUPERVISE_MS); // keep watching for config/roster changes
   } catch (err) {
     // A torn config read (switch/join writes while we parse) or a sync socket
@@ -295,10 +313,25 @@ function guardSingleInstance(): void {
   }
 }
 
+function ayodVersion(): string {
+  try {
+    return (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: string }).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
 mkdirSync(AYO_DIR, { recursive: true }); // a fresh service launch may predate it
 initLog();
 guardSingleInstance();
 writeFileSync(DAEMON_PID_PATH, String(process.pid));
+// Version breadcrumb for `ayo doctor`: after an npm upgrade the SERVICE keeps
+// running the old ayod until restarted — doctor can now see the skew.
+try {
+  writeFileSync(DAEMON_META_PATH, JSON.stringify({ pid: process.pid, version: ayodVersion() }));
+} catch {
+  /* cosmetic — never block startup on it */
+}
 ownsPidfile = true; // from here on, removePid may delete it
 
 // Clean stop (service stop sends SIGTERM): remove the pidfile and exit 0 so the
