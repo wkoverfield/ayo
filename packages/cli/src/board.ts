@@ -28,7 +28,7 @@ function truncate(s: string, n: number): string {
   return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
 }
 
-function render(team: string, members: MemberPresence[], items: FeedItem[], hackathon: HackathonState | null): string {
+function render(team: string, members: MemberPresence[], items: FeedItem[], hackathon: HackathonState | null, otherTeams = 0): string {
   const rule = `  ${pc.dim("─".repeat(WIDTH))}`;
   const online = members.filter((m) => m.online).length;
   const title = hackathon?.name ?? team;
@@ -86,7 +86,7 @@ function render(team: string, members: MemberPresence[], items: FeedItem[], hack
   // The board shows TEAM activity only (broadcasts + handoffs) — say so, or a
   // person who just received a DM/reply stares at the board wondering where it
   // went (it's in their inbox, on purpose).
-  out.push("", `  ${pc.dim("1:1 pings & replies stay private — they're in `ayo inbox`")}`);
+  out.push("", `  ${pc.dim("1:1 pings & replies stay private — they're in `ayo inbox`")}${otherTeams > 0 ? pc.dim(` · 1 of ${otherTeams + 1} teams (\`ayo board --team <name>\`)`) : ""}`);
   out.push(`  ${pc.dim(`↻ every ${REFRESH_MS / 1000}s · q or Ctrl-C to quit`)}`);
   return out.join("\n");
 }
@@ -102,23 +102,37 @@ async function fetchBoard(s: Parameters<typeof api.members>[0], teamId: string) 
   return { members, items, hackathon };
 }
 
-export async function board(opts: { once?: boolean } = {}): Promise<void> {
+export async function board(opts: { once?: boolean; team?: string } = {}): Promise<void> {
   const s = requireSession();
   const cfg = loadConfig();
-  if (!cfg.activeTeamId) return void console.log("No active team. `ayo team create` or `ayo join` first.");
-  const teamId = cfg.activeTeamId;
 
+  // The board is a per-team dashboard. Default: the active team. `--team`
+  // peeks at another WITHOUT switching what your sends target.
+  let teamId = cfg.activeTeamId;
   let team = "your team";
+  let otherTeams = 0;
   try {
-    team = (await api.me(s)).teams.find((t) => t.id === teamId)?.name ?? team;
+    const { teams } = await api.me(s);
+    otherTeams = Math.max(0, teams.length - 1);
+    if (opts.team) {
+      const ref = opts.team;
+      const match = teams.filter((t) => t.id === ref || t.name.toLowerCase() === ref.toLowerCase());
+      if (match.length !== 1) {
+        console.error(`✗ ${match.length ? "ambiguous" : "no"} team "${ref}" — see \`ayo team list\``);
+        process.exit(1);
+      }
+      teamId = match[0]!.id;
+    }
+    team = teams.find((t) => t.id === teamId)?.name ?? team;
   } catch {
-    /* fall back to default label */
+    /* fall back to the active team + default label */
   }
+  if (!teamId) return void console.log("No active team. `ayo team create` or `ayo join` first.");
 
   // One-shot frame: no alt screen / raw mode / loop. Works when piped.
   if (opts.once) {
     const { members, items, hackathon } = await fetchBoard(s, teamId);
-    console.log(render(team, members, items, hackathon));
+    console.log(render(team, members, items, hackathon, otherTeams));
     return;
   }
 
@@ -176,7 +190,8 @@ export async function board(opts: { once?: boolean } = {}): Promise<void> {
       } catch (e) {
         err = (e as Error).message;
       }
-      const body = err ? `\n  ${pc.yellow(`reconnecting… (${err})`)}` : render(team, members, items, hackathon);
+      const body = err ? `
+  ${pc.yellow(`reconnecting… (${err})`)}` : render(team, members, items, hackathon, otherTeams);
       process.stdout.write(CLEAR + body);
       await sleep(REFRESH_MS);
     }

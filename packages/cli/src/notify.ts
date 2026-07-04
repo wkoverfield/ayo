@@ -29,16 +29,19 @@ import { cachedCustomPath, ensureCustomSound, playSound, presetPath } from "./so
 const iconPath = fileURLToPath(new URL("../assets/ayo.png", import.meta.url));
 const ICON_PATH: string | undefined = existsSync(iconPath) ? iconPath : undefined;
 
-export function notifyAyo(ayo: Ayo, opts: { actionable?: boolean } = {}): void {
+export function notifyAyo(ayo: Ayo, opts: { actionable?: boolean; teamName?: string } = {}): void {
   const ctx = ayo.context;
   const where = ctx?.repo && ctx?.branch ? ` (${ctx.repo}@${ctx.branch})` : "";
   const urgent = ayo.urgency === "urgent";
+  // Multi-team: the daemon passes teamName only when you're in MORE than one
+  // team — a solo-team toast stays clean, a multi-team toast says where from.
+  const team = opts.teamName ? `[${opts.teamName}] ` : "";
   // An ask reads as a question waiting on you, not a message from a person —
   // and a self-ask names the agent, not you-from-you.
   const title =
     ayo.kind === "ask"
-      ? `⧗ ${ayo.from.handle}'s agent asks${where}`
-      : `${urgent ? "🚨 " : ""}Ayo from ${ayo.from.handle}${where}`;
+      ? `⧗ ${team}${ayo.from.handle}'s agent asks${where}`
+      : `${urgent ? "🚨 " : ""}${team}Ayo from ${ayo.from.handle}${where}`;
 
   // Signature sound: play the sender's chosen sound (unless the recipient muted
   // it). When one is being handled, keep the toast itself silent so they don't
