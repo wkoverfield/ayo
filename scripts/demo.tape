@@ -1,32 +1,56 @@
-# Ayo demo tape. Record the README GIF with:  vhs scripts/demo.tape
+# Ayo demo tape — an on-demand terminal demo gif (NOT committed; the README
+# leads with the handoff-page screenshot, since the terminal is only one of
+# Ayo's surfaces). Record it (relay + team + seed state) with:
 #
-# Requires charmbracelet/vhs (`brew install vhs`) and the local dev rig from
-# the README's "Try it solo" section running as persona "you" (so `ayo` is
-# aliased and AYO_RELAY_URL points at the local relay). Writes docs/demo.gif.
+#     pnpm -r build && scripts/record-demo.sh
 #
-# The story is the wedge: one handoff, and the link that works for anyone.
+# Requires charmbracelet/vhs. record-demo.sh boots a local relay, seeds an
+# inbound handoff (with real git context) and a blocked agent ask, then runs
+# this tape. Every frame below is genuine `ayo` output.
+#
+# The story, from your seat at the terminal: work arrives WITH its context, your
+# own agent asks you before it acts, and you hand off with a link anyone can
+# open — all without leaving the terminal. Typed lines stay ASCII (VHS mangles
+# the cursor on typed em-dashes); the product's own output carries the rest.
 
 Output docs/demo.gif
 
 Set Shell "bash"
-Set FontSize 18
-Set Width 1200
+Set FontSize 17
+Set Width 1280
 Set Height 600
-Set Padding 22
+Set Padding 24
 Set Theme "Catppuccin Mocha"
+Set TypingSpeed 45ms
 
-Sleep 500ms
+# ── setup (not recorded): env + the clean `ayo` wrapper on PATH ──
+Hide
+Type "source /tmp/ayo-demo-rec/env.sh && clear"
+Enter
+Show
 
-Type "ayo handoff maya 'oauth callback 400s, the token exchange rejects redirect_uri'"
-Sleep 800ms
+Sleep 600ms
+
+# 1 — work arrives with its context: a teammate's handoff + a pinned agent ask
+Type "ayo inbox"
+Sleep 400ms
 Enter
 Sleep 3s
 
-# prints: ✓ handoff sent  /  ✓ share link  https://…/h/AbCd…
-Type "# that link renders your branch, diff, and blocker for anyone,"
-Sleep 900ms
+# 2 — your own agent hit a fork and is waiting on you, instead of guessing
+Type "ayo agents"
+Sleep 400ms
 Enter
-Type "# even before they install Ayo, and they can reply from the page."
-Sleep 2500ms
+Sleep 3s
+
+Type "ayo answer 1 backoff"
+Sleep 400ms
 Enter
-Sleep 1500ms
+Sleep 2.5s
+
+# 3 — hand your work off with a link that works for anyone (its output says so)
+Type "ayo handoff maya "
+Type "'the staging deploy is yours'"
+Sleep 500ms
+Enter
+Sleep 4s

@@ -20,10 +20,6 @@ this." Git and your existing tools stay the source of truth. Ayo never calls an
 LLM, and it forgets your 1:1 pings on purpose. It is a sidechannel, not a second
 inbox to keep up with.
 
-<!-- Demo GIF: `vhs scripts/demo.tape` writes docs/demo.gif, then uncomment:
-<p align="center"><img src="docs/demo.gif" alt="wilson runs 'ayo handoff maya' in one pane; the link prints, maya's pane shows a native toast and 'ayo inbox' rendering the branch, files, and blocker; maya replies and it lands back in wilson's terminal." width="720"></p>
--->
-
 ```bash
 npm install -g @ayo-dev/cli
 
