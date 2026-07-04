@@ -10,3 +10,4 @@ dist/
 .DS_Store
 coverage/
 packages/cli/native/macos/build/
+docs/demo.gif

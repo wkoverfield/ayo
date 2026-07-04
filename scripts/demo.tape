@@ -1,4 +1,6 @@
-# Ayo demo tape — the README gif. Record it (relay + team + seed state) with:
+# Ayo demo tape — an on-demand terminal demo gif (NOT committed; the README
+# leads with the handoff-page screenshot, since the terminal is only one of
+# Ayo's surfaces). Record it (relay + team + seed state) with:
 #
 #     pnpm -r build && scripts/record-demo.sh
 #

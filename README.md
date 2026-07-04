@@ -20,10 +20,6 @@ this." Git and your existing tools stay the source of truth. Ayo never calls an
 LLM, and it forgets your 1:1 pings on purpose. It is a sidechannel, not a second
 inbox to keep up with.
 
-<p align="center"><img src="docs/demo.gif" alt="A terminal session: 'ayo inbox' shows a teammate's handoff carrying its branch, changed files, and diff stat, plus a pinned question from your own agent; 'ayo agents' shows the blocked question with ready answer commands; 'ayo answer 1 backoff' unblocks it; then 'ayo handoff maya' prints a share link that works for anyone, even before they're on Ayo." width="820"></p>
-
-<sub>Regenerate the gif with `pnpm -r build && scripts/record-demo.sh` (needs <a href="https://github.com/charmbracelet/vhs">vhs</a>). The gif shows the terminal surfaces; the shareable handoff <em>page</em> a non-user opens is under <a href="#hand-off-with-a-link">Hand off with a link</a>.</sub>
-
 ```bash
 npm install -g @ayo-dev/cli
 

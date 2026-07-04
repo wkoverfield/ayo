@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 #
-# Record docs/demo.gif — a real, reproducible terminal gif of the Ayo CLI.
+# Record docs/demo.gif on demand — a real, reproducible terminal gif of the Ayo
+# CLI. The gif is NOT committed (it's gitignored): the terminal is only one of
+# Ayo's surfaces, so the README leads with the handoff-page screenshot instead.
+# This stays here so a gif is one command away when you want one.
 #
 # Boots a local relay (dev auth stub) + a two-person team, pre-seeds deterministic
 # state (an inbound handoff with real git context, and a blocked agent ask), then
