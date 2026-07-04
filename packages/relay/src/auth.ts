@@ -71,7 +71,10 @@ export async function findOrCreateGithubUser(env: Env, gh: GithubUser): Promise<
 
 export async function issueSession(env: Env, userId: UserId): Promise<string> {
   const token = `sess_${crypto.randomUUID().replace(/-/g, "")}`;
-  await env.AYO_KV.put(`session:${token}`, userId);
+  // Sessions expire server-side after 90 days — a laptop that stops being
+  // used must not hold a working token forever. (Pre-existing sessions from
+  // before this landed have no TTL; `ayo logout` revokes any session.)
+  await env.AYO_KV.put(`session:${token}`, userId, { expirationTtl: 60 * 60 * 24 * 90 });
   return token;
 }
 
@@ -83,4 +86,9 @@ export async function issueSession(env: Env, userId: UserId): Promise<string> {
  */
 export function devStubEnabled(env: Env): boolean {
   return env.AYO_DEV_AUTH === "1";
+}
+
+/** Revoke a session token (logout). Idempotent — deleting a missing key is fine. */
+export async function revokeSession(env: Env, token: string): Promise<void> {
+  await env.AYO_KV.delete(`session:${token}`);
 }

@@ -4,7 +4,7 @@
  * manages the daemon. Receiving is the daemon's job (ADR 0001/0002).
  */
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Command, Help } from "commander";
 import pc from "picocolors";
@@ -59,7 +59,7 @@ program.showSuggestionAfterError(true);
 const HELP_ORDER = [
   "init", "handoff", "inbox", "agents", "answer", "board", "status", "who",
   "team", "invite", "join", "webhook", "sound", "hackathon",
-  "doctor", "daemon", "hooks", "mcp", "login", "uninstall", "help",
+  "doctor", "daemon", "hooks", "mcp", "login", "whoami", "logout", "uninstall", "help",
 ];
 program.configureHelp({
   visibleCommands(cmd) {
@@ -233,6 +233,55 @@ program
   });
 
 program
+  .command("whoami")
+  .description("Which account and teams this machine is on")
+  .option("--json", "raw JSON for agents", false)
+  .action(async (opts) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      let teams: { id: string; name: string }[] = [];
+      try {
+        teams = (await api.me(s)).teams;
+      } catch { /* offline — show local identity anyway */ }
+      if (opts.json) {
+        return void console.log(JSON.stringify({ handle: s.handle, userId: s.userId, relayUrl: cfg.relayUrl, activeTeamId: cfg.activeTeamId ?? null, teams }, null, 2));
+      }
+      console.log(`${pc.bold(s.handle)} ${pc.dim(`(${s.userId})`)}`);
+      console.log(pc.dim(`relay: ${cfg.relayUrl}`));
+      for (const t of teams) {
+        const active = t.id === cfg.activeTeamId;
+        console.log(`${active ? pc.green("●") : pc.dim("○")} ${t.name}${active ? pc.dim("  ← active") : ""}`);
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
+  .command("logout")
+  .description("Revoke this machine's session and forget it locally")
+  .action(async () => {
+    try {
+      const s = loadSession();
+      if (!s) return void console.log(pc.dim("not logged in — nothing to do"));
+      // Revoke server-side FIRST (best-effort): deleting the local file alone
+      // would leave a live token behind, which is the exact footgun logout exists
+      // to close. A dead/unreachable relay still logs you out locally, honestly.
+      let revoked = false;
+      try {
+        await api.logout(s);
+        revoked = true;
+      } catch { /* token may already be invalid, or relay unreachable */ }
+      rmSync(join(AYO_DIR, "session.json"), { force: true });
+      console.log(pc.green("✓ logged out") + (revoked ? "" : pc.yellow("  — couldn't confirm the server revoked the token (relay unreachable); it expires on its own within 90 days")));
+      console.log(pc.dim("  your teams and config are untouched — `ayo login` to come back"));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
   .command("uninstall")
   .description("Reverse Ayo's local wiring (daemon + agent hooks/MCP)")
   .action(async () => {
@@ -321,6 +370,43 @@ async function resolveTeam(s: Session, ref: string): Promise<{ id: string; name:
   process.exit(1);
 }
 
+team
+  .command("leave [team]")
+  .description("Leave a team (the active one by default)")
+  .action(async (ref?: string) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      const t = ref ? await resolveTeam(s, ref) : await resolveTeam(s, requireTeam(cfg));
+      await api.leaveTeam(s, t.id);
+      console.log(pc.green(`✓ left ${pc.bold(t.name)}`));
+      if (cfg.activeTeamId === t.id) {
+        // Don't leave sends pointed at a team you're no longer on.
+        let next: { id: string; name: string } | undefined;
+        try {
+          next = (await api.me(s)).teams.find((x) => x.id !== t.id);
+        } catch { /* offline — just clear */ }
+        saveConfig({ ...loadConfig(), activeTeamId: next?.id });
+        console.log(next ? pc.dim(`  active team is now ${next.name}`) : pc.dim("  no active team — `ayo team create` or `ayo join`"));
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+team
+  .command("remove <handle>")
+  .description("Remove a member from the active team — creator only")
+  .action(async (handle: string) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      const teamId = requireTeam(cfg);
+      await api.removeMember(s, teamId, handle);
+      console.log(pc.green(`✓ removed ${pc.bold(handle)}`) + pc.dim("  — their live streams drop within seconds; rotate the join code if it leaked: `ayo team rotate-code`"));
+    } catch (err) {
+      fail(err);
+    }
+  });
 team
   .command("list")
   .description("All teams you belong to (● = active: where sends/board/webhooks go)")

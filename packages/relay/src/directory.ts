@@ -58,6 +58,21 @@ export async function createTeam(env: Env, name: string, ownerId?: UserId): Prom
   return meta;
 }
 
+/** All memberships of a team (handle + userId), one KV page (sizes are small). */
+export async function listMemberships(env: Env, teamId: TeamId): Promise<{ userId: UserId; handle: Handle }[]> {
+  const list = await env.AYO_KV.list({ prefix: `member:${teamId}:` });
+  const out: { userId: UserId; handle: Handle }[] = [];
+  for (const k of list.keys) {
+    const raw = await env.AYO_KV.get(k.name);
+    if (!raw) continue;
+    try {
+      const m = JSON.parse(raw) as { userId: UserId; handle: Handle };
+      out.push({ userId: m.userId, handle: m.handle });
+    } catch { /* skip corrupt */ }
+  }
+  return out;
+}
+
 /** Count current members of a team (for the size cap). */
 export async function countMembers(env: Env, teamId: TeamId): Promise<number> {
   // list() paginates at 1000 keys; team sizes are far below the cap, so one page.
@@ -127,4 +142,11 @@ export async function teamsForUser(
 /** Resolve which team an Ayo belongs to (index written by the team DO on send). */
 export async function teamForAyo(env: Env, ayoId: AyoId): Promise<TeamId | null> {
   return (await env.AYO_KV.get(`ayoteam:${ayoId}`)) as TeamId | null;
+}
+
+/** Remove a member from a team's directory (both index directions). The DO
+ *  roster is cleaned separately (internal/remove-member) — KV here, DO there. */
+export async function removeMembership(env: Env, teamId: TeamId, userId: UserId): Promise<void> {
+  await env.AYO_KV.delete(`member:${teamId}:${userId}`);
+  await env.AYO_KV.delete(`usermember:${userId}:${teamId}`);
 }
