@@ -11,7 +11,7 @@ Please do not open a public issue for a security problem. Instead, either:
 
 - Use GitHub's private [Report a vulnerability](https://github.com/wkoverfield/ayo/security/advisories/new)
   form, or
-- Email wilson@joinfindu.com with `ayo security` in the subject.
+- Email wkoverfield@gmail.com with `ayo security` in the subject.
 
 Include the smallest repro you can, the version (`ayo --version`), and what you
 expected versus what happened. I aim to acknowledge within a few days.
