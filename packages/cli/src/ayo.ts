@@ -79,7 +79,7 @@ program.addHelpText(
   "after",
   `
 Examples:
-  ayo maya "demo deploy is cooked, can you tap in?"    ping one person
+  ayo maya "auth endpoint is live, you're unblocked"   ping one person
   ayo team "standup in 5"                              broadcast to everyone
   ayo handoff maya "stuck on oauth"                    hand off with git context + a share link
   ayo agents                                           which asks are waiting on you
@@ -1189,7 +1189,7 @@ program
   .option("--team <team>", "view another team's board without switching your active team")
   .action((opts) => board({ once: !!opts.once, team: opts.team }));
 
-// ── handoff (the hero: hand off your work with full context) ─────────────────
+// ── handoff (escalation tier above a ping: put your work in their hands) ────
 program
   .command("handoff <target> [message...]")
   .description("Hand off your work to a teammate (branch, changed files, diff stat, note)")
