@@ -29,13 +29,24 @@ function bearer(req: Request): string | null {
 export async function authenticate(req: Request, env: Env): Promise<Session | null> {
   const token = bearer(req);
   if (!token) return null;
-  const userId = await env.AYO_KV.get(`session:${token}`);
-  // Rolling 90-day TTL: every successful auth re-stamps the expiry, so an
-  // actively-used machine never gets silently logged out, an abandoned one
-  // dies within 90 days — and legacy no-TTL sessions pick up a TTL on their
-  // first request after this deploys.
-  if (userId) {
-    await env.AYO_KV.put(`session:${token}`, userId, { expirationTtl: 60 * 60 * 24 * 90 });
+  const { value: userId, metadata } = await env.AYO_KV.getWithMetadata<{ ts?: number }>(`session:${token}`);
+  // Rolling 90-day TTL, re-stamped AT MOST daily (the last-refresh time rides
+  // in KV metadata): an actively-used machine never gets silently logged out,
+  // an abandoned one dies within ~90 days, and legacy no-TTL sessions pick up
+  // a TTL on their first request after this deploys. Guarded + throttled:
+  // KV allows ~1 write/sec/key and the CLI fans out concurrent same-token
+  // requests, so the refresh must never fail the auth (it's an optimization)
+  // and must not write on every call (a daemon alone would blow the write
+  // budget at one put per 30s supervise tick).
+  if (userId && Date.now() - (metadata?.ts ?? 0) > 24 * 60 * 60 * 1000) {
+    try {
+      await env.AYO_KV.put(`session:${token}`, userId, {
+        expirationTtl: 60 * 60 * 24 * 90,
+        metadata: { ts: Date.now() },
+      });
+    } catch {
+      /* concurrent same-key write lost the race — the next quiet request re-stamps */
+    }
   }
   return userId ? { userId: userId as UserId } : null;
 }
@@ -81,7 +92,7 @@ export async function issueSession(env: Env, userId: UserId): Promise<string> {
   // Sessions expire 90 days after their LAST USE (authenticate re-stamps the
   // TTL) — a laptop that stops being used must not hold a working token
   // forever, and `ayo logout` revokes one immediately.
-  await env.AYO_KV.put(`session:${token}`, userId, { expirationTtl: 60 * 60 * 24 * 90 });
+  await env.AYO_KV.put(`session:${token}`, userId, { expirationTtl: 60 * 60 * 24 * 90, metadata: { ts: Date.now() } });
   return token;
 }
 
