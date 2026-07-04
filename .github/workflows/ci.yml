@@ -52,6 +52,18 @@ jobs:
       - name: Typecheck
         run: pnpm -r typecheck
 
+      # The relay runs in Workers and must never import @ayo-dev/core/node
+      # (node:fs / node:child_process). The typechecker won't catch it (the
+      # subpath's d.ts is node-type-free) and nodejs_compat erodes the
+      # fails-at-deploy backstop, so enforce the convention here.
+      - name: Relay must not import @ayo-dev/core/node
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          if git grep -n "core/node" -- packages/relay/src; then
+            echo "::error::packages/relay must not import @ayo-dev/core/node (Workers bundle)"
+            exit 1
+          fi
+
   # Verify the native macOS notifier still compiles. The full build-notifier.sh
   # also signs/notarizes (needs a cert we don't have in CI), so here we only
   # compile main.swift unsigned — that's enough to catch source regressions.

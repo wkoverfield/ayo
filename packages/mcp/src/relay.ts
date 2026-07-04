@@ -5,31 +5,17 @@
  * concurrent `ayo login` can't swap identity mid-request.
  */
 
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
-import { readFileSync, existsSync } from "node:fs";
-import {
-  DEFAULT_RELAY_URL,
-  type AskStateResponse,
-  type InboxResponse,
-  type MembersResponse,
-  type SendAyoRequest,
-  type SendAyoResponse,
-  type SetStatusRequest,
-  type CreateHandoffLinkRequest,
-  type CreateHandoffLinkResponse,
+import type {
+  AskStateResponse,
+  InboxResponse,
+  MembersResponse,
+  SendAyoRequest,
+  SendAyoResponse,
+  SetStatusRequest,
+  CreateHandoffLinkRequest,
+  CreateHandoffLinkResponse,
 } from "@ayo-dev/core";
-
-const AYO_DIR = process.env.AYO_DIR ? resolve(process.env.AYO_DIR) : join(homedir(), ".ayo");
-
-interface Session {
-  token: string;
-  handle: string;
-}
-interface Config {
-  relayUrl?: string;
-  activeTeamId?: string;
-}
+import { loadConfig, loadSession, relayCall, RelayError } from "@ayo-dev/core/node";
 
 export interface Auth {
   token: string;
@@ -39,43 +25,31 @@ export interface Auth {
   handle: string;
 }
 
-function read<T>(file: string): T | null {
-  const p = join(AYO_DIR, file);
-  return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as T) : null;
-}
-
 export function loadAuth(): Auth {
-  const session = read<Session>("session.json");
-  const config = read<Config>("config.json") ?? {};
+  const session = loadSession();
+  const config = loadConfig();
   if (!session) throw new Error("Not logged in — run `ayo login` in a terminal first.");
   if (!config.activeTeamId) throw new Error("No active team — run `ayo team create` or `ayo join`.");
-  const relayUrl = process.env.AYO_RELAY_URL ?? config.relayUrl ?? DEFAULT_RELAY_URL;
+  // Unlike the CLI, the MCP server lets AYO_RELAY_URL beat the config file —
+  // it's spawned by agents with an env the user can't easily see, so the
+  // explicit env wins. (loadConfig already folds the env in when the file has
+  // no relayUrl of its own.)
+  const relayUrl = process.env.AYO_RELAY_URL ?? config.relayUrl;
   return { token: session.token, relayUrl, teamId: config.activeTeamId, handle: session.handle };
 }
 
 async function call<T>(auth: Auth, path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
-  const res = await fetch(`${auth.relayUrl}${path}`, {
-    method: opts.method ?? "GET",
-    headers: {
-      authorization: `Bearer ${auth.token}`,
-      ...(opts.body ? { "content-type": "application/json" } : {}),
-    },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  if (!res.ok) {
-    const raw = await res.text();
-    // Prefer the relay's structured { error: { code, message } }; fall back to
-    // raw text. Redact the token defensively in case anything reflects it.
-    let msg = raw;
-    try {
-      const j = JSON.parse(raw) as { error?: { code?: string; message?: string } };
-      if (j.error?.message) msg = j.error.code ? `${j.error.code}: ${j.error.message}` : j.error.message;
-    } catch {
-      /* not JSON — use raw */
+  // Shared transport (redaction + error parsing) from @ayo-dev/core/node; keep
+  // this server's historical error shape — a plain Error whose message leads
+  // with the relay's code — since that string is what the agent reads.
+  try {
+    return await relayCall<T>(auth.relayUrl, path, { ...opts, token: auth.token });
+  } catch (err) {
+    if (err instanceof RelayError) {
+      throw new Error(err.code !== "http_error" ? `${err.code}: ${err.message}` : err.message);
     }
-    throw new Error(msg.replaceAll(auth.token, "[redacted]").slice(0, 500));
+    throw err;
   }
-  return (await res.json()) as T;
 }
 
 export const relay = {
