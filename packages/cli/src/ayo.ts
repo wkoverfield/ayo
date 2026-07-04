@@ -240,16 +240,19 @@ program
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      let teams: { id: string; name: string }[] = [];
+      let teams: { id: string; name: string }[] | null = [];
       try {
         teams = (await api.me(s)).teams;
-      } catch { /* offline — show local identity anyway */ }
+      } catch {
+        teams = null; // offline — unknown is not the same as none
+      }
       if (opts.json) {
         return void console.log(JSON.stringify({ handle: s.handle, userId: s.userId, relayUrl: cfg.relayUrl, activeTeamId: cfg.activeTeamId ?? null, teams }, null, 2));
       }
       console.log(`${pc.bold(s.handle)} ${pc.dim(`(${s.userId})`)}`);
       console.log(pc.dim(`relay: ${cfg.relayUrl}`));
-      for (const t of teams) {
+      if (teams === null) console.log(pc.yellow("⚠ relay unreachable — teams not shown"));
+      for (const t of teams ?? []) {
         const active = t.id === cfg.activeTeamId;
         console.log(`${active ? pc.green("●") : pc.dim("○")} ${t.name}${active ? pc.dim("  ← active") : ""}`);
       }
@@ -274,7 +277,10 @@ program
         revoked = true;
       } catch { /* token may already be invalid, or relay unreachable */ }
       rmSync(join(AYO_DIR, "session.json"), { force: true });
-      console.log(pc.green("✓ logged out") + (revoked ? "" : pc.yellow("  — couldn't confirm the server revoked the token (relay unreachable); it expires on its own within 90 days")));
+      console.log(
+        pc.green("✓ logged out") +
+          (revoked ? "" : pc.yellow("  — couldn't confirm the server revoked the token; if it was still valid, log in and `ayo logout` again when the relay is reachable")),
+      );
       console.log(pc.dim("  your teams and config are untouched — `ayo login` to come back"));
     } catch (err) {
       fail(err);
@@ -402,7 +408,13 @@ team
       const cfg = loadConfig();
       const teamId = requireTeam(cfg);
       await api.removeMember(s, teamId, handle);
-      console.log(pc.green(`✓ removed ${pc.bold(handle)}`) + pc.dim("  — their live streams drop within seconds; rotate the join code if it leaked: `ayo team rotate-code`"));
+      // Name the team — no-prompt removal on the ACTIVE team means the receipt
+      // must carry the full facts (multi-team is real now).
+      let tname = teamId;
+      try {
+        tname = (await api.me(s)).teams.find((t) => t.id === teamId)?.name ?? teamId;
+      } catch { /* best-effort */ }
+      console.log(pc.green(`✓ removed ${pc.bold(handle)} from ${pc.bold(tname)}`) + pc.dim("  — their live streams drop within seconds; rotate the join code if it leaked: `ayo team rotate-code`"));
     } catch (err) {
       fail(err);
     }
@@ -1099,14 +1111,18 @@ program
     if (isDaemonAlive()) {
       let dv: string | undefined;
       try {
-        dv = (JSON.parse(readFileSync(DAEMON_META_PATH, "utf8")) as { version?: string }).version;
+        const meta = JSON.parse(readFileSync(DAEMON_META_PATH, "utf8")) as { pid?: number; version?: string };
+        const livePid = Number(readFileSync(join(AYO_DIR, "daemon.pid"), "utf8").trim());
+        // A stale meta (an ayod that ran once and exited) must not vouch for
+        // the daemon that's actually running.
+        if (meta.pid === livePid) dv = meta.version;
       } catch {
         /* older daemon wrote no meta */
       }
       const skew = dv && dv !== pkgVersion();
       console.log(pc.green(`✓ daemon running (ayod${dv ? ` v${dv}` : ""})`));
       if (skew) console.log(pc.yellow(`⚠ daemon is v${dv} but the CLI is v${pkgVersion()} — restart it: \`ayo daemon stop && ayo daemon start\``));
-      else if (!dv) console.log(pc.dim("  (pre-0.4 daemon — restart it once to pick up multi-team receiving)"));
+      else if (!dv) console.log(pc.dim("  (daemon predates version reporting — restart it once so doctor can check for skew)"));
     } else {
       console.log(pc.yellow("⚠ daemon not running — `ayo daemon install` (or `ayo daemon start`)"));
     }

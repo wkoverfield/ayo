@@ -34,6 +34,10 @@ Reports that especially matter:
 - **Path traversal or injection** through handles, tokens, team/handoff ids, or
   webhook and handoff-page content.
 
+Sessions expire 90 days after their last use (rolling), and `ayo logout`
+revokes this machine's token immediately. Listing/revoking OTHER machines'
+sessions isn't built yet — flagged in docs/FOLLOWUPS.md.
+
 ## Supported versions
 
 Ayo is pre-1.0 and moves fast. Fixes land on the latest published

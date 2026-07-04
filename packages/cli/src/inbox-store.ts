@@ -38,6 +38,7 @@ export function writeInbox(file: InboxFile): void {
 export function upsertInbox(ayo: Ayo): void {
   const inbox = loadInbox();
   if (!inbox.ayos.some((a) => a.id === ayo.id)) inbox.ayos.push(ayo);
+  if (inbox.ayos.length > INBOX_CAP) inbox.ayos = inbox.ayos.slice(-INBOX_CAP);
   inbox.updatedAt = new Date().toISOString();
   writeInbox(inbox);
 }
@@ -57,6 +58,10 @@ interface AgentState {
 }
 
 const SEEN_CAP = 1000;
+/** Inbox cap — MUST stay below SEEN_CAP: the seen-set is pruned to its cap,
+ *  and if the inbox could outgrow it, evicted seen-ids still in the inbox
+ *  would resurface to the agent forever (a rotating re-inject loop). */
+const INBOX_CAP = 500;
 
 function loadAgentState(): AgentState {
   if (!existsSync(AGENT_STATE_PATH)) return {};

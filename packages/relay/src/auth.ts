@@ -30,6 +30,13 @@ export async function authenticate(req: Request, env: Env): Promise<Session | nu
   const token = bearer(req);
   if (!token) return null;
   const userId = await env.AYO_KV.get(`session:${token}`);
+  // Rolling 90-day TTL: every successful auth re-stamps the expiry, so an
+  // actively-used machine never gets silently logged out, an abandoned one
+  // dies within 90 days — and legacy no-TTL sessions pick up a TTL on their
+  // first request after this deploys.
+  if (userId) {
+    await env.AYO_KV.put(`session:${token}`, userId, { expirationTtl: 60 * 60 * 24 * 90 });
+  }
   return userId ? { userId: userId as UserId } : null;
 }
 
@@ -71,9 +78,9 @@ export async function findOrCreateGithubUser(env: Env, gh: GithubUser): Promise<
 
 export async function issueSession(env: Env, userId: UserId): Promise<string> {
   const token = `sess_${crypto.randomUUID().replace(/-/g, "")}`;
-  // Sessions expire server-side after 90 days — a laptop that stops being
-  // used must not hold a working token forever. (Pre-existing sessions from
-  // before this landed have no TTL; `ayo logout` revokes any session.)
+  // Sessions expire 90 days after their LAST USE (authenticate re-stamps the
+  // TTL) — a laptop that stops being used must not hold a working token
+  // forever, and `ayo logout` revokes one immediately.
   await env.AYO_KV.put(`session:${token}`, userId, { expirationTtl: 60 * 60 * 24 * 90 });
   return token;
 }

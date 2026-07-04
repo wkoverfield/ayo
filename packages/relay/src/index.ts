@@ -377,6 +377,13 @@ export default {
         if (!(await getMembership(env, teamId, userId))) {
           return apiError("not_a_member", "You are not a member of this team.");
         }
+        // An owner leaving would orphan the team: ownerId would point at a
+        // non-member, making rotate-code and member removal permanently
+        // unusable. Block it until transfer/delete exists.
+        const leaveTeam = await getTeam(env, teamId);
+        if (leaveTeam?.ownerId === userId) {
+          return apiError("forbidden", "You created this team — leaving would orphan it (owner transfer/delete isn't built yet).");
+        }
         await removeMembership(env, teamId, userId);
         ctx.waitUntil(removeFromRoster(env, teamId, userId, userId));
         return json({ ok: true });
@@ -740,9 +747,11 @@ async function loadUser(env: Env, userId: string): Promise<PublicUser | null> {
  * roster is also self-healing on first real interaction.
  */
 /** Tell the team DO a member is gone: roster record deleted, live sockets
- *  dropped. Caller identity = the AUTHORIZED remover (the DO re-rosters the
- *  caller on internal calls, so it must never be the removed user for kicks —
- *  for self-leave it is, and the handler deletes them right after). */
+ *  dropped. Sent with BLANK x-ayo identity on purpose (like guest-reply):
+ *  the DO re-rosters any identified internal caller, and for self-leave the
+ *  caller IS the person being removed — blank identity means rememberMember
+ *  no-ops and the deletion sticks. Authorization already happened in the
+ *  route handler; `by` rides in the body for future audit only. */
 async function removeFromRoster(env: Env, teamId: string, targetUserId: string, byUserId: string): Promise<void> {
   try {
     const stub = env.TEAM.get(env.TEAM.idFromName(teamId));
