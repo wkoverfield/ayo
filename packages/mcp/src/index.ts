@@ -78,7 +78,7 @@ server.tool(
 // ── read_inbox ───────────────────────────────────────────────────────────────
 server.tool(
   "read_inbox",
-  "Read your Ayo inbox (pings sent to you) with their work context. Surfacing " +
+  "Read your Ayo inbox (the ACTIVE team — `ayo team switch` changes it; the CLI inbox covers every team) (pings sent to you) with their work context. Surfacing " +
     "in the agent does NOT mark them read — that needs an explicit human action.",
   { unreadOnly: z.boolean().optional().describe("Only unread (default true).") },
   async ({ unreadOnly }) => {

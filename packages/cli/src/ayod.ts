@@ -126,7 +126,7 @@ function openSocket(token: string, relayUrl: string, teamId: string, handle: str
 
   sock.on("open", () => {
     const s = sockets.get(teamId);
-    if (s) s.backoff = 1000;
+    if (s && s.ws === sock) s.backoff = 1000; // a replaced socket must not reset the new one's backoff
     log(`connected to ${teamNames.get(teamId) ?? teamId} as ${handle}`);
   });
   sock.on("message", (data) => {
@@ -219,6 +219,11 @@ async function supervise(): Promise<void> {
       }
     }
     schedule(SUPERVISE_MS); // keep watching for config/roster changes
+  } catch (err) {
+    // A torn config read (switch/join writes while we parse) or a sync socket
+    // throw must not kill the daemon — log, retry soon.
+    log(`supervise error: ${(err as Error).message}`);
+    schedule(RETRY_MS);
   } finally {
     supervising = false;
   }
@@ -251,7 +256,7 @@ function handleFrame(sock: WebSocket, teamId: string, frame: ServerFrame): void 
       if (!known) {
         try {
           // Badge the toast with the team only when you're in more than one.
-          notifyAyo(ayo, sockets.size > 1 ? { teamName: teamNames.get(teamId) } : {});
+          notifyAyo(ayo, teamNames.size > 1 ? { teamName: teamNames.get(teamId) } : {});
           ack(sock, ayo.id, "notified"); // the human's machine buzzed (NOT read)
         } catch (err) {
           // Notification failed — do NOT ack `notified` and do NOT crash.

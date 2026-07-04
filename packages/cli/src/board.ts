@@ -125,7 +125,12 @@ export async function board(opts: { once?: boolean; team?: string } = {}): Promi
     }
     team = teams.find((t) => t.id === teamId)?.name ?? team;
   } catch {
-    /* fall back to the active team + default label */
+    // me() unreachable: the ACTIVE team is a safe fallback, but an explicit
+    // --team is not — showing team Y when they asked for X would be a lie.
+    if (opts.team) {
+      console.error(`✗ can't resolve --team "${opts.team}" right now (relay unreachable) — try again`);
+      process.exit(1);
+    }
   }
   if (!teamId) return void console.log("No active team. `ayo team create` or `ayo join` first.");
 

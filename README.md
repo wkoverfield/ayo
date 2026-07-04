@@ -171,8 +171,7 @@ Relay ─▶ local Ayo daemon (ayod) ─▶ OS notification + local inbox   ← 
                                ─▶ MCP / CLI read & reply on demand
 ```
 
-- **The daemon receives.** A tiny background service holds one realtime
-  connection to the relay and pops a native notification the instant an Ayo
+- **The daemon receives.** A tiny background service holds one realtime  connection to the relay and pops a native notification the instant an Ayo
   arrives. No `watch` pane to babysit.
 - **The agents surface it.** `ayo hooks install` makes Claude Code
   (`SessionStart` + `UserPromptSubmit`) quietly drop your unread Ayos into the

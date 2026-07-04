@@ -605,10 +605,15 @@ program
       const s = requireSession();
       const cfg = loadConfig();
       const { teams, teamName } = await inboxTeams(s, cfg, opts.team);
-      const perTeam = await Promise.all(
+      // allSettled: one team's 403 (leave race / KV lag right after a join) must
+      // not blank every OTHER team's asks — warn per team instead.
+      const settled = await Promise.allSettled(
         teams.map((t) => api.inbox(s, t.id, undefined, false).then((r) => r.ayos)),
       );
-      const ayos = perTeam.flat();
+      settled.forEach((r, i) => {
+        if (r.status === "rejected") console.error(pc.yellow(`⚠ couldn't read ${teams[i]!.name}: ${(r.reason as Error).message}`));
+      });
+      const ayos = settled.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
       const now = Date.now();
       const waiting = ayos.filter(
         (a) =>
@@ -696,10 +701,17 @@ program
       // Every team by default — a ping must never be invisible because it came
       // from the non-active team. Fall back to the active team if me() fails.
       const { teams, teamName } = await inboxTeams(s, cfg, opts.team);
-      const perTeam = await Promise.all(
+      // allSettled: one team's 403 (leave race / KV lag right after a join) must
+      // not blank every OTHER team's pings — warn per team instead.
+      const settled = await Promise.allSettled(
         teams.map((t) => api.inbox(s, t.id, undefined, opts.unread).then((r) => r.ayos)),
       );
-      const ayos = perTeam.flat().sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+      settled.forEach((r, i) => {
+        if (r.status === "rejected") console.error(pc.yellow(`⚠ couldn't read ${teams[i]!.name}: ${(r.reason as Error).message}`));
+      });
+      const ayos = settled
+        .flatMap((r) => (r.status === "fulfilled" ? r.value : []))
+        .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
       if (opts.json) return void console.log(JSON.stringify(ayos, null, 2));
       if (!ayos.length) return void console.log(pc.dim("inbox zero"));
       // Unanswered asks PIN to the top — each one is a blocked agent, not a
@@ -828,8 +840,20 @@ program
 
       const status = flagStatus ?? current!.status;
       const statusText = text ?? current?.statusText ?? null;
-      await api.setStatus(s, teamId, { status, statusText });
+      // Status is about YOU, not a team — and the daemon now streams every
+      // team, so heads-down must hold pings EVERYWHERE or the promise below
+      // ("holding non-urgent pings") is false for all but the active team.
+      let teamIds = [teamId];
+      try {
+        const { teams } = await api.me(s);
+        if (teams.length) teamIds = teams.map((t) => t.id);
+      } catch {
+        /* me() unavailable — active team only, better than nothing */
+      }
+      const results = await Promise.allSettled(teamIds.map((id) => api.setStatus(s, id, { status, statusText })));
+      const failedN = results.filter((r) => r.status === "rejected").length;
       echo(status, statusText);
+      if (failedN) console.error(pc.yellow(`⚠ status didn't reach ${failedN} of ${teamIds.length} teams`));
     } catch (err) {
       fail(err);
     }
