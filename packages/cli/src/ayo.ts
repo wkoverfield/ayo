@@ -303,6 +303,59 @@ team
     }
   });
 
+/** Resolve a team by exact id or case-insensitive name from me().teams.
+ *  Exits with the list on no match or an ambiguous name. */
+async function resolveTeam(s: Session, ref: string): Promise<{ id: string; name: string }> {
+  const { teams } = await api.me(s);
+  const exact = teams.find((t) => t.id === ref);
+  if (exact) return exact;
+  const named = teams.filter((t) => t.name.toLowerCase() === ref.toLowerCase());
+  if (named.length === 1) return named[0]!;
+  console.error(
+    named.length
+      ? pc.red(`✗ "${ref}" matches ${named.length} teams — use the id`)
+      : pc.red(`✗ no team named "${ref}"`),
+  );
+  for (const t of teams) console.error(pc.dim(`  ${t.name}  (${t.id})`));
+  process.exit(1);
+}
+
+team
+  .command("list")
+  .description("All teams you belong to (● = active: where sends/board/webhooks go)")
+  .option("--json", "raw JSON for agents", false)
+  .action(async (opts) => {
+    try {
+      const s = requireSession();
+      const cfg = loadConfig();
+      const { teams } = await api.me(s);
+      if (opts.json) return void console.log(JSON.stringify(teams.map((t) => ({ ...t, active: t.id === cfg.activeTeamId })), null, 2));
+      if (!teams.length) return void console.log(pc.dim("no teams yet — `ayo team create <name>` or `ayo join <code>`"));
+      for (const t of teams) {
+        const active = t.id === cfg.activeTeamId;
+        console.log(`${active ? pc.green("●") : pc.dim("○")} ${pc.bold(t.name)} ${pc.dim(`(${t.id})`)}${active ? pc.dim("  ← active") : ""}`);
+      }
+      if (teams.length > 1) {
+        console.log(pc.dim("  sends target the active team; you receive from every team. `ayo team switch <name>`"));
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+team
+  .command("switch <team>")
+  .description("Make another team the active one — sends, board, and webhooks target it")
+  .action(async (ref: string) => {
+    try {
+      const s = requireSession();
+      const t = await resolveTeam(s, ref);
+      saveConfig({ ...loadConfig(), activeTeamId: t.id });
+      console.log(pc.green(`✓ active team: ${pc.bold(t.name)}`) + pc.dim("  — you still receive pings from every team"));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
 // `ayo team "we're cooked"` broadcasts to everyone — the default when the args
 // aren't `create`/`status`. (Commander routes unmatched args to isDefault.)
 team
@@ -337,9 +390,15 @@ program
   .action(async (code: string) => {
     try {
       const s = requireSession();
+      const prevTeamId = loadConfig().activeTeamId;
       const res = await api.joinTeam(s, code);
       saveConfig({ ...loadConfig(), activeTeamId: res.id });
       console.log(pc.green(`✓ joined ${pc.bold(res.name)}`));
+      // Joining a SECOND team silently retargeting your sends is a footgun —
+      // say it happened and how to undo it. (Receiving covers every team.)
+      if (prevTeamId && prevTeamId !== res.id) {
+        console.log(pc.dim(`  sends now target ${res.name} — switch back anytime: \`ayo team switch <name>\` (\`ayo team list\`)`));
+      }
       if (res.invitedBy) {
         console.log(`  ${pc.bold(res.invitedBy)} invited you — try:  ${pc.cyan(`ayo ${res.invitedBy} "picked up your handoff"`)}`);
       }
@@ -506,16 +565,55 @@ function waitingFor(createdAt: string): string {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
+/** Teams a read-side command (inbox/agents) should cover: ALL of them by
+ *  default — a ping must never be invisible because it came from the
+ *  non-active team — one team when the user asks, the active team as the
+ *  fallback when me() is unreachable. */
+async function inboxTeams(
+  s: Session,
+  cfg: ReturnType<typeof loadConfig>,
+  only?: string,
+): Promise<{ teams: { id: string; name: string }[]; teamName: Map<string, string> }> {
+  let teams: { id: string; name: string }[] = [];
+  try {
+    teams = (await api.me(s)).teams;
+  } catch {
+    /* listing unavailable — fall back to the active team below */
+  }
+  if (!teams.length) {
+    const tid = requireTeam(cfg);
+    teams = [{ id: tid, name: tid }];
+  }
+  if (only) {
+    const match = teams.filter((t) => t.id === only || t.name.toLowerCase() === only.toLowerCase());
+    if (match.length !== 1) {
+      console.error(pc.red(`✗ ${match.length ? "ambiguous" : "no"} team "${only}"`) + pc.dim("  — see `ayo team list`"));
+      process.exit(1);
+    }
+    teams = match;
+  }
+  return { teams, teamName: new Map(teams.map((t) => [t.id, t.name])) };
+}
+
 program
   .command("agents")
-  .description("Which asks are waiting on you (blocked agents + teammates' questions)")
+  .description("Which asks are waiting on you, across every team")
+  .option("--team <team>", "only this team (name or id)")
   .option("--json", "raw JSON for agents", false)
   .action(async (opts) => {
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      const teamId = requireTeam(cfg);
-      const { ayos } = await api.inbox(s, teamId, undefined, false);
+      const { teams, teamName } = await inboxTeams(s, cfg, opts.team);
+      // allSettled: one team's 403 (leave race / KV lag right after a join) must
+      // not blank every OTHER team's asks — warn per team instead.
+      const settled = await Promise.allSettled(
+        teams.map((t) => api.inbox(s, t.id, undefined, false).then((r) => r.ayos)),
+      );
+      settled.forEach((r, i) => {
+        if (r.status === "rejected") console.error(pc.yellow(`⚠ couldn't read ${teams[i]!.name}: ${(r.reason as Error).message}`));
+      });
+      const ayos = settled.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
       const now = Date.now();
       const waiting = ayos.filter(
         (a) =>
@@ -537,7 +635,8 @@ program
         const mark = CIRCLED[i] ?? `${n}.`;
         const who = a.from.id === s.userId ? "your agent" : a.from.handle;
         const where = a.context?.repo ? ` · ${a.context.repo}@${a.context.branch ?? "?"}` : "";
-        console.log(`  ${pc.bold(mark)}  ${pc.cyan(who)}${pc.dim(where)} · ${pc.dim(`waiting ${waitingFor(a.createdAt)}`)}`);
+        const tag = teams.length > 1 ? pc.dim(` [${teamName.get(a.teamId) ?? a.teamId}]`) : "";
+        console.log(`  ${pc.bold(mark)}  ${pc.cyan(who)}${tag}${pc.dim(where)} · ${pc.dim(`waiting ${waitingFor(a.createdAt)}`)}`);
         console.log(`      ${pc.bold(`"${a.body}"`)}`);
         if (a.context?.note) console.log(pc.dim(`      ${a.context.note}`));
         const opts_ = a.ask?.options ?? [];
@@ -591,15 +690,28 @@ Examples:
 // ── inbox ────────────────────────────────────────────────────────────────────
 program
   .command("inbox")
-  .description("Read your Ayos — open asks pin to the top")
+  .description("Read your Ayos from every team — open asks pin to the top")
   .option("--unread", "only unread", false)
+  .option("--team <team>", "only this team (name or id)")
   .option("--json", "raw JSON for agents", false)
   .action(async (opts) => {
     try {
       const s = requireSession();
       const cfg = loadConfig();
-      const teamId = requireTeam(cfg);
-      const { ayos } = await api.inbox(s, teamId, undefined, opts.unread);
+      // Every team by default — a ping must never be invisible because it came
+      // from the non-active team. Fall back to the active team if me() fails.
+      const { teams, teamName } = await inboxTeams(s, cfg, opts.team);
+      // allSettled: one team's 403 (leave race / KV lag right after a join) must
+      // not blank every OTHER team's pings — warn per team instead.
+      const settled = await Promise.allSettled(
+        teams.map((t) => api.inbox(s, t.id, undefined, opts.unread).then((r) => r.ayos)),
+      );
+      settled.forEach((r, i) => {
+        if (r.status === "rejected") console.error(pc.yellow(`⚠ couldn't read ${teams[i]!.name}: ${(r.reason as Error).message}`));
+      });
+      const ayos = settled
+        .flatMap((r) => (r.status === "fulfilled" ? r.value : []))
+        .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
       if (opts.json) return void console.log(JSON.stringify(ayos, null, 2));
       if (!ayos.length) return void console.log(pc.dim("inbox zero"));
       // Unanswered asks PIN to the top — each one is a blocked agent, not a
@@ -617,10 +729,12 @@ program
       const byId = new Map(ayos.map((a) => [a.id, a]));
       for (const a of [...pinned, ...rest]) {
         const where = a.context?.branch ? pc.dim(` ${a.context.repo}@${a.context.branch}`) : "";
+        // Badge the team only when more than one is in view.
+        const tag = teams.length > 1 ? pc.dim(` [${teamName.get(a.teamId) ?? a.teamId}]`) : "";
         const mark = isOpenAsk(a) ? pc.yellow("⧗ ") : a.urgency === "urgent" ? pc.red("! ") : "";
         const from = a.kind === "ask" && a.from.id === s.userId ? "your agent" : a.from.handle;
         const age = pc.dim(rel(a.createdAt).padStart(4) + "  ");
-        console.log(`${age}${mark}${pc.bold(pc.cyan(from))}${where}: ${a.body}`);
+        console.log(`${age}${mark}${pc.bold(pc.cyan(from))}${tag}${where}: ${a.body}`);
         if (a.replyTo) {
           // Resolve locally when the referenced Ayo is in this inbox; otherwise
           // the relay stamps guest replies with a `re: "<blocker>"` note (the
@@ -726,8 +840,20 @@ program
 
       const status = flagStatus ?? current!.status;
       const statusText = text ?? current?.statusText ?? null;
-      await api.setStatus(s, teamId, { status, statusText });
+      // Status is about YOU, not a team — and the daemon now streams every
+      // team, so heads-down must hold pings EVERYWHERE or the promise below
+      // ("holding non-urgent pings") is false for all but the active team.
+      let teamIds = [teamId];
+      try {
+        const { teams } = await api.me(s);
+        if (teams.length) teamIds = teams.map((t) => t.id);
+      } catch {
+        /* me() unavailable — active team only, better than nothing */
+      }
+      const results = await Promise.allSettled(teamIds.map((id) => api.setStatus(s, id, { status, statusText })));
+      const failedN = results.filter((r) => r.status === "rejected").length;
       echo(status, statusText);
+      if (failedN) console.error(pc.yellow(`⚠ status didn't reach ${failedN} of ${teamIds.length} teams`));
     } catch (err) {
       fail(err);
     }
@@ -856,11 +982,13 @@ program
     // One me() round-trip does double duty: proves the relay is reachable AND
     // names the active team (a raw team_… id is machine junk in a human check).
     let teamName: string | undefined;
+    let allTeams: { id: string; name: string }[] = [];
     let relayLine: string | null = null;
     if (s) {
       try {
         const me = await api.me(s);
         teamName = me.teams.find((t) => t.id === cfg.activeTeamId)?.name;
+        allTeams = me.teams;
         relayLine = pc.green("✓ relay reachable");
       } catch (err) {
         relayLine = pc.red(`✗ relay unreachable: ${(err as Error).message}`);
@@ -872,6 +1000,10 @@ program
         : cfg.activeTeamId
       : pc.dim("none — `ayo team create` or `ayo join`");
     console.log(`team:    ${teamShown}`);
+    if (allTeams.length > 1) {
+      const others = allTeams.filter((t) => t.id !== cfg.activeTeamId).map((t) => t.name).join(", ");
+      console.log(`teams:   ${allTeams.length} ${pc.dim(`(also on: ${others} — the daemon streams every team; sends target the active one)`)}`);
+    }
     if (relayLine) console.log(relayLine);
 
     // The daemon is the receiver — without it, Ayos never reach this machine.
@@ -940,7 +1072,8 @@ program
   .command("board")
   .description("Live team dashboard — presence, status, open handoffs, recent activity")
   .option("--once", "print one frame and exit (for piping / scripts)")
-  .action((opts) => board({ once: !!opts.once }));
+  .option("--team <team>", "view another team's board without switching your active team")
+  .action((opts) => board({ once: !!opts.once, team: opts.team }));
 
 // ── handoff (the hero: hand off your work with full context) ─────────────────
 program

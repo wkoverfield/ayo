@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * ayod — the Ayo daemon. Holds one WebSocket to the team DO, pops a native
+ * ayod — the Ayo daemon. Holds one WebSocket PER TEAM you belong to (an Ayo
+ * from any of your teams reaches this machine — "route attention to you
+ * wherever you are" can't mean "for one team at a time"), pops a native
  * notification the instant an Ayo arrives, and acks machine-level receipt
  * (delivered -> notified). This is the receive path (ADR 0001). It never marks
  * anything `read` — that requires explicit human action over HTTP.
@@ -8,7 +10,8 @@
  * Built to run as a long-lived OS service (launchd/systemd, see service.ts):
  *  - refuses to start if another ayod is already alive (no double-notify);
  *  - owns its pidfile (removed on a clean stop) and a size-bounded, rotated log;
- *  - a supervisor re-reads config so login / team switches are picked up live,
+ *  - a supervisor re-reads config AND re-fetches the team roster (me()) so
+ *    login changes, team switches, joins, and new teams are picked up live,
  *    and waits+retries when not yet set up (no crash-loop before login).
  */
 
@@ -26,6 +29,7 @@ import WebSocket from "ws";
 import type { ServerFrame, AckFrame } from "@ayo-dev/core";
 import { PROTOCOL_VERSION } from "@ayo-dev/core";
 import { AYO_DIR, DAEMON_LOG_PATH, DAEMON_PID_PATH, loadConfig, loadSession } from "./config.js";
+import { api } from "./client.js";
 import { loadInbox, upsertInbox } from "./inbox-store.js";
 import { notifyAyo } from "./notify.js";
 
@@ -75,15 +79,21 @@ function removePid(): void {
 
 // ── Connection supervisor ────────────────────────────────────────────────────
 
-let ws: WebSocket | null = null;
-let connectedTeam: string | null = null;
-let connectedToken: string | null = null;
-let backoff = 1000;
+interface TeamSocket {
+  ws: WebSocket;
+  token: string;
+  backoff: number;
+}
+
+const sockets = new Map<string, TeamSocket>(); // teamId -> live socket
+/** teamId -> team name, refreshed from me() — used to badge multi-team toasts. */
+const teamNames = new Map<string, string>();
 let timer: ReturnType<typeof setTimeout> | null = null;
+let supervising = false; // supervise() is async now; never let two ticks overlap
 
 function schedule(ms: number): void {
   if (timer) clearTimeout(timer);
-  timer = setTimeout(supervise, ms);
+  timer = setTimeout(() => void supervise(), ms);
 }
 
 function wsUrl(relayUrl: string, teamId: string): string {
@@ -91,31 +101,33 @@ function wsUrl(relayUrl: string, teamId: string): string {
   return `${base}/v1/teams/${teamId}/stream`;
 }
 
-function teardown(): void {
-  if (ws) {
-    ws.removeAllListeners("close"); // don't let the old socket trigger a reconnect
-    try {
-      ws.close();
-    } catch {
-      /* ignore */
-    }
-    ws = null;
+function closeSocket(teamId: string): void {
+  const s = sockets.get(teamId);
+  if (!s) return;
+  s.ws.removeAllListeners("close"); // don't let the old socket trigger a reconnect
+  try {
+    s.ws.close();
+  } catch {
+    /* ignore */
   }
-  connectedTeam = null;
-  connectedToken = null;
+  sockets.delete(teamId);
+}
+
+function teardownAll(): void {
+  for (const teamId of [...sockets.keys()]) closeSocket(teamId);
 }
 
 function openSocket(token: string, relayUrl: string, teamId: string, handle: string): void {
-  connectedTeam = teamId;
-  connectedToken = token;
+  const prevBackoff = sockets.get(teamId)?.backoff ?? 1000;
   const sock = new WebSocket(wsUrl(relayUrl, teamId), {
     headers: { authorization: `Bearer ${token}` },
   });
-  ws = sock;
+  sockets.set(teamId, { ws: sock, token, backoff: prevBackoff });
 
   sock.on("open", () => {
-    backoff = 1000;
-    log(`connected to ${teamId} as ${handle}`);
+    const s = sockets.get(teamId);
+    if (s && s.ws === sock) s.backoff = 1000; // a replaced socket must not reset the new one's backoff
+    log(`connected to ${teamNames.get(teamId) ?? teamId} as ${handle}`);
   });
   sock.on("message", (data) => {
     let frame: ServerFrame;
@@ -124,40 +136,97 @@ function openSocket(token: string, relayUrl: string, teamId: string, handle: str
     } catch {
       return;
     }
-    handleFrame(sock, frame);
+    handleFrame(sock, teamId, frame);
   });
   sock.on("close", () => {
-    ws = null;
-    connectedTeam = null;
-    log(`disconnected; reconnecting in ${backoff}ms`);
-    schedule(backoff); // supervise re-reads config, so it reconnects with the latest team
-    backoff = Math.min(backoff * 2, 30_000);
+    const s = sockets.get(teamId);
+    // Only act if the entry is still OURS (a switch/reconcile may have already
+    // replaced it). Remember the grown backoff so retries actually back off.
+    if (s && s.ws === sock) {
+      sockets.delete(teamId);
+      backoffMemory.set(teamId, Math.min(s.backoff * 2, 30_000));
+      log(`${teamNames.get(teamId) ?? teamId}: disconnected; reconnecting in ${s.backoff}ms`);
+      schedule(s.backoff); // supervise reconciles everything with the latest config
+    }
   });
-  sock.on("error", (err) => log(`socket error: ${err.message}`));
+  sock.on("error", (err) => log(`${teamId}: socket error: ${err.message}`));
 }
 
-/** Single control loop: reconcile the live socket with the current config. */
-function supervise(): void {
-  const session = loadSession();
-  const cfg = loadConfig();
-  const teamId = cfg.activeTeamId;
+/** Per-team reconnect delay that survives the socket's Map entry (grown on
+ *  close, consumed on the next open, reset to 1s on a successful connect). */
+const backoffMemory = new Map<string, number>();
 
-  if (!session || !teamId) {
-    teardown();
-    log("not logged in / no active team — waiting; run `ayo login` / `ayo join`");
+/**
+ * Single control loop: reconcile the live sockets with the current identity and
+ * team roster. The roster comes from me() (best-effort — on failure we fall
+ * back to the teams we already know plus the active one, so a relay blip never
+ * tears down working connections).
+ */
+async function supervise(): Promise<void> {
+  if (supervising) return;
+  supervising = true;
+  try {
+    const session = loadSession();
+    const cfg = loadConfig();
+
+    if (!session) {
+      teardownAll();
+      log("not logged in — waiting; run `ayo login`");
+      schedule(RETRY_MS);
+      return;
+    }
+
+    // Identity changed under us (re-login)? Drop everything and rebuild.
+    for (const [teamId, s] of sockets) {
+      if (s.token !== session.token) closeSocket(teamId);
+    }
+
+    // Which teams should we stream? Every team you belong to.
+    let teamIds: string[] = [];
+    try {
+      const me = await api.me(session);
+      teamNames.clear();
+      for (const t of me.teams) teamNames.set(t.id, t.name);
+      teamIds = me.teams.map((t) => t.id);
+    } catch {
+      // Relay unreachable — keep what we have, make sure the active team is tried.
+      teamIds = [...new Set([...sockets.keys(), ...(cfg.activeTeamId ? [cfg.activeTeamId] : [])])];
+    }
+
+    if (teamIds.length === 0) {
+      teardownAll();
+      log("no teams yet — waiting; run `ayo team create` or `ayo join`");
+      schedule(RETRY_MS);
+      return;
+    }
+
+    const want = new Set(teamIds);
+    for (const teamId of [...sockets.keys()]) {
+      if (!want.has(teamId)) {
+        log(`left ${teamNames.get(teamId) ?? teamId} — closing its stream`);
+        closeSocket(teamId);
+      }
+    }
+    for (const teamId of want) {
+      if (!sockets.has(teamId)) {
+        const memo = backoffMemory.get(teamId);
+        openSocket(session.token, cfg.relayUrl, teamId, session.handle);
+        if (memo) {
+          const s = sockets.get(teamId);
+          if (s) s.backoff = memo;
+        }
+        backoffMemory.delete(teamId);
+      }
+    }
+    schedule(SUPERVISE_MS); // keep watching for config/roster changes
+  } catch (err) {
+    // A torn config read (switch/join writes while we parse) or a sync socket
+    // throw must not kill the daemon — log, retry soon.
+    log(`supervise error: ${(err as Error).message}`);
     schedule(RETRY_MS);
-    return;
+  } finally {
+    supervising = false;
   }
-
-  // Team or identity changed under us (user switched teams / re-logged in)?
-  if (ws && (connectedTeam !== teamId || connectedToken !== session.token)) {
-    log(`config changed — switching to team ${teamId}`);
-    teardown();
-  }
-  if (!ws) {
-    openSocket(session.token, cfg.relayUrl, teamId, session.handle);
-  }
-  schedule(SUPERVISE_MS); // keep watching for config changes while connected
 }
 
 // ── Frame handling ───────────────────────────────────────────────────────────
@@ -167,10 +236,10 @@ function ack(sock: WebSocket, ayoId: string, state: AckFrame["state"]): void {
   sock.send(JSON.stringify(frame));
 }
 
-function handleFrame(sock: WebSocket, frame: ServerFrame): void {
+function handleFrame(sock: WebSocket, teamId: string, frame: ServerFrame): void {
   switch (frame.t) {
     case "ready":
-      log(`ready — ${frame.unread} unread, ${frame.members.filter((m) => m.online).length} online`);
+      log(`${teamNames.get(teamId) ?? teamId}: ready — ${frame.unread} unread, ${frame.members.filter((m) => m.online).length} online`);
       // No negotiation yet — just surface a mismatch so a stale CLI vs a redeployed
       // relay is diagnosable instead of silently misbehaving.
       if (typeof frame.protocol === "number" && frame.protocol !== PROTOCOL_VERSION) {
@@ -186,7 +255,8 @@ function handleFrame(sock: WebSocket, frame: ServerFrame): void {
       ack(sock, ayo.id, "delivered"); // machine has it
       if (!known) {
         try {
-          notifyAyo(ayo);
+          // Badge the toast with the team only when you're in more than one.
+          notifyAyo(ayo, teamNames.size > 1 ? { teamName: teamNames.get(teamId) } : {});
           ack(sock, ayo.id, "notified"); // the human's machine buzzed (NOT read)
         } catch (err) {
           // Notification failed — do NOT ack `notified` and do NOT crash.
