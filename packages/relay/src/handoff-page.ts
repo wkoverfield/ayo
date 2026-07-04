@@ -100,7 +100,7 @@ code{font-family:var(--mono)}
 .reply .lbl{color:#A63A1B}
 .reply-h{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:18px;color:var(--ink);margin-bottom:4px;letter-spacing:-.01em}
 .reply-sub{font-size:13px;color:var(--ink2);margin-bottom:12px}
-.field{width:100%;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font:inherit;font-size:14px;color:var(--ink);margin-bottom:9px}
+.field{width:100%;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font:inherit;font-size:16px;color:var(--ink);margin-bottom:9px}
 textarea.field{min-height:88px;resize:vertical}
 .frow{display:flex;gap:9px;align-items:stretch}
 .frow .field{flex:1;margin-bottom:0}
@@ -134,10 +134,9 @@ textarea.field{min-height:88px;resize:vertical}
 body{padding:24px 15px 26px}
 h1{font-size:22px}
 .card{padding:15px 16px}
-.field{font-size:16px;padding:12px 13px}
+.field{padding:12px 13px}
 textarea.field{min-height:110px}
 .frow{flex-direction:column}
-.frow .field{margin-bottom:9px}
 .btn{width:100%;padding:13px 18px}
 .diff .row{font-size:11px}
 }
@@ -169,7 +168,7 @@ function shell(inner: string): string {
   );
 }
 
-const HEADER = `<div class="brand rise"><img src="${AYO_LOGO_DATA_URI}" alt="Ayo" width="40" height="40"><span class="tag">a handoff for you · sent with <a href="${REPO_URL}">Ayo</a>, open source</span></div>`;
+const HEADER = `<div class="brand rise"><img src="${AYO_LOGO_DATA_URI}" alt="Ayo" width="40" height="40"><span class="tag">a handoff for you · sent with <a href="${REPO_URL}">Ayo</a> (open source)</span></div>`;
 const FOOTER = `<div class="foot rise"><img src="${AYO_LOGO_DATA_URI}" alt=""> Sent with <a href="${REPO_URL}">Ayo</a> — attention pings from inside your terminal &amp; agents</div>`;
 
 /** Render a live handoff. Every `${}` is an escaped value or a constant.
@@ -211,7 +210,7 @@ export function renderHandoffPage(share: HandoffShare, token: string): string {
     const exp = share.joinCodeExpiresAt;
     const codeExpired = exp != null && new Date(exp).getTime() <= Date.now();
     if (codeExpired) {
-      joinBlock = `<div class="ask">The join code in this handoff has expired — replying above still works. Ask ${from} for a fresh code when you're ready to join.</div>`;
+      joinBlock = `<div class="ask">The join code in this handoff has expired — replying above still works. When you're ready to join, ask ${from} for a fresh code and run <code>ayo join &lt;code&gt;</code>.</div>`;
     } else {
       const note = exp ? `<div class="codenote">code ${escapeHtml(timeLeft(exp))}</div>` : "";
       joinBlock = `<div class="step"><div class="num">2</div><div class="body"><div class="t">Join the team &amp; pick it up</div><div class="term"><span class="code">ayo join <span class="code-em">${escapeHtml(share.joinCode)}</span></span></div>${note}</div></div>`;
@@ -255,13 +254,19 @@ export function renderHandoffPage(share: HandoffShare, token: string): string {
 export function renderReplySentPage(share: HandoffShare, guestName: string, message: string): string {
   const from = escapeHtml(share.from.name || share.from.handle);
   const guest = escapeHtml(guestName);
-  const joinStep = share.joinCode
+  // Same stale-code rule as the live page: never hand out a dead command.
+  const exp = share.joinCodeExpiresAt;
+  const codeExpired = exp != null && new Date(exp).getTime() <= Date.now();
+  const joinStep = share.joinCode && !codeExpired
     ? `<div class="step"><div class="num">2</div><div class="body"><div class="t">Join ${from}'s team</div><div class="term"><span class="code">ayo join <span class="code-em">${escapeHtml(share.joinCode)}</span></span></div></div></div>`
+    : "";
+  const replyEcho = message
+    ? `<div class="card rise"><div class="lbl">Your reply</div><div class="note">${escapeHtml(message)}</div></div>`
     : "";
   const body = `
     ${HEADER}
     <div class="sent rise"><div class="check">✓</div><div><div class="sent-h">Sent — ${from} will see it in their terminal</div><div class="sent-sub">Threaded to this handoff, from &ldquo;${guest} (via link)&rdquo;.</div></div></div>
-    <div class="card rise"><div class="lbl">Your reply</div><div class="note">${escapeHtml(message)}</div></div>
+    ${replyEcho}
     <div class="cta rise"><div class="lbl">Keep the loop going</div><div class="cta-h">Want ${from}'s reply to land where <em>you</em> work?</div>
       <div class="step"><div class="num">1</div><div class="body"><div class="t">Install Ayo — the conversation follows you into your terminal &amp; agents, with the code context attached</div><div class="term"><span class="code">${escapeHtml(INSTALL_CMD)}</span></div></div></div>
       ${joinStep}
@@ -276,7 +281,7 @@ export function renderReplySentPage(share: HandoffShare, guestName: string, mess
  *  When we have the guest's draft, echo it back so the failure can't eat it. */
 export function renderReplyErrorPage(token: string, message: string, draft?: string): string {
   const draftCard = draft
-    ? `<div class="card rise"><div class="lbl">Your reply — copy it before retrying</div><div class="note">${escapeHtml(draft)}</div></div>`
+    ? `<div class="card rise"><div class="lbl">Your reply</div><div class="note">${escapeHtml(draft)}</div></div>`
     : "";
   const backNote = draft
     ? `<a href="/h/${token}">← Back to the handoff</a> — your reply is shown above, copy it first.`
