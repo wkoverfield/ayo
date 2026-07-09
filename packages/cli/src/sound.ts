@@ -9,7 +9,14 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AyoSound } from "@ayo-dev/core";
@@ -19,6 +26,9 @@ import { AYO_DIR, loadConfig, loadSession } from "./config.js";
 // dist/sound.js -> ../assets/sounds/ (shipped in the npm tarball via `files`).
 const PRESET_DIR = fileURLToPath(new URL("../assets/sounds/", import.meta.url));
 const CACHE_DIR = join(AYO_DIR, "sounds");
+// Keep the cache bounded. One custom sound per teammate is typical,
+// so 100 cached clips is generous while preventing unbounded growth.
+const MAX_CACHE_FILES = 100;
 
 export function presetPath(id: string): string | null {
   if (!(SOUND_PRESETS as readonly string[]).includes(id)) return null;
@@ -71,12 +81,43 @@ export async function ensureCustomSound(sound: { url: string; hash: string }): P
     mkdirSync(CACHE_DIR, { recursive: true });
     const p = join(CACHE_DIR, `${sound.hash}.wav`);
     writeFileSync(p, buf);
+    pruneCache(p);
     return p;
   } catch {
     return null;
   }
 }
+function pruneCache(protectedFile: string): void {
+  try {
+    const files = readdirSync(CACHE_DIR)
+      .filter((file) => file.endsWith(".wav"))
+      .map((file) => ({
+        path: join(CACHE_DIR, file),
+      }))
+      .filter((file) => file.path !== protectedFile);
 
+    if (files.length <= MAX_CACHE_FILES) return;
+    files.sort(
+      (a, b) =>
+        statSync(a.path).mtime.getTime() -
+        statSync(b.path).mtime.getTime(),
+    );
+    const filesToDelete = files.slice(
+      0,
+      files.length - MAX_CACHE_FILES,
+    );
+    for (const file of filesToDelete) {
+      try {
+        unlinkSync(file.path);
+      } catch {
+        // Ignore deletion failures.
+      }
+    }
+  } catch {
+    // Cache pruning is best-effort.
+    // Never interrupt message delivery because cleanup failed.
+  }
+}
 /** Play a WAV fire-and-forget via the platform's CLI player. Never throws. */
 export function playSound(file: string): void {
   try {
@@ -115,7 +156,7 @@ export function playSoundSync(file: string): void {
 
 function detached(cmd: string, args: string[]): void {
   const child = spawn(cmd, args, { stdio: "ignore", detached: true });
-  child.on("error", () => {}); // swallow ENOENT etc.
+  child.on("error", () => { }); // swallow ENOENT etc.
   child.unref();
 }
 
