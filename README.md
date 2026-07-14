@@ -246,10 +246,9 @@ Or run [`scripts/demo.sh`](scripts/demo.sh) for a scripted walkthrough.
 | [`@ayo-dev/core`](packages/core) | Shared message schema, wire protocol, and types |
 | [`relay`](packages/relay) | Cloudflare Worker + Durable Object: realtime fanout, one DO per team |
 
-## Design notes
+## Docs
 
-- [ADR 0001: Receive path is daemon-first, not MCP-first](docs/adr/0001-receive-path-daemon-first.md)
-- [ADR 0002: Relay contract, message schema, and wire protocol](docs/adr/0002-relay-contract-and-message-schema.md)
+- [The Ayo protocol](docs/protocol.md) · the wire contract: message schema, HTTP API, WebSocket frames, delivery states
 - [Auth setup](docs/auth-setup.md) · [MCP setup](docs/mcp-setup.md) · [Follow-ups](docs/FOLLOWUPS.md)
 
 ## Development

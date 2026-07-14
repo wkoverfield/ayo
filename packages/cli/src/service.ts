@@ -1,6 +1,6 @@
 /**
  * OS service managers so `ayod` runs as a persistent user service that starts
- * on login and survives reboots (ADR 0001 install target).
+ * on login and survives reboots.
  *
  *  - macOS: a launchd LaunchAgent (~/Library/LaunchAgents/dev.ayo.daemon.plist)
  *  - Linux: a systemd --user unit (~/.config/systemd/user/ayo-daemon.service)

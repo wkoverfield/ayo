@@ -11,3 +11,5 @@ dist/
 coverage/
 packages/cli/native/macos/build/
 docs/demo.gif
+.claude/
+.codex/

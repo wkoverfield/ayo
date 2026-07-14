@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * `ayo` — the one-shot CLI. Sends over HTTP (stateless), reads the inbox, and
- * manages the daemon. Receiving is the daemon's job (ADR 0001/0002).
+ * manages the daemon. Receiving is the daemon's job (see docs/protocol.md).
  */
 
 import { readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";

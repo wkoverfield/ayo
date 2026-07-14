@@ -19,7 +19,7 @@ expected versus what happened. I aim to acknowledge within a few days.
 ## What counts
 
 The relay is the only place identity is verified, and the Durable Object never
-trusts a client-supplied identity (see [ADR 0002](docs/adr/0002-relay-contract-and-message-schema.md)).
+trusts a client-supplied identity (see [the protocol spec](docs/protocol.md)).
 Reports that especially matter:
 
 - **Identity / authorization:** sending or reading as someone you aren't,

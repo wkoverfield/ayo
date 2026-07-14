@@ -4,7 +4,7 @@
  *
  * The Worker is the only place identity is verified. It injects the verified
  * userId/handle into forwarded requests via `x-ayo-*` headers; the DO never
- * trusts a client-supplied identity (ADR 0002).
+ * trusts a client-supplied identity (see docs/protocol.md).
  */
 
 import type {

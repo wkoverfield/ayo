@@ -1,7 +1,7 @@
 /**
  * Capture work context from the current git repo. The relay treats this as an
  * opaque blob — privacy boundary holds: explicit packets only, never full
- * session transcripts (ADR 0001/0002). Full diff is opt-in via `withDiff` and
+ * session transcripts (see docs/protocol.md). Full diff is opt-in via `withDiff` and
  * capped at MAX_DIFF_BYTES.
  *
  * Shared by the CLI and the MCP server (which is spawned by Codex/Claude in

@@ -1,5 +1,5 @@
 /**
- * HTTP API request/response shapes for the `/v1` relay. See ADR 0002.
+ * HTTP API request/response shapes for the `/v1` relay. See docs/protocol.md.
  * HTTP is the command channel; every mutation has an endpoint here so any
  * one-shot process (CLI, MCP) can perform it without the daemon's socket.
  */

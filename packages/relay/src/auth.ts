@@ -1,6 +1,6 @@
 /**
  * Session auth. A session token is opaque and identifies one user across all
- * their teams (ADR 0002). Tokens are stored in KV: `session:<token>` -> userId.
+ * their teams (see docs/protocol.md). Tokens are stored in KV: `session:<token>` -> userId.
  *
  * GitHub device flow is the production path: the relay starts a device code and
  * polls GitHub's OAuth device endpoint, issuing a session on success (see

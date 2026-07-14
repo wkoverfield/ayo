@@ -1,7 +1,7 @@
 /**
  * Custom notification-sound (WAV) validation for `PUT /v1/me/sound` uploads.
  * Lean, friends-tier: cap size + length, sniff the RIFF/WAVE header (no decoder
- * on Workers), and content-hash for cache-busting + integrity. See the spec.
+ * on Workers), and content-hash for cache-busting + integrity. See docs/protocol.md.
  */
 
 import type { ApiErrorCode } from "@ayo-dev/core";

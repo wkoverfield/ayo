@@ -1,8 +1,8 @@
 # Follow-ups
 
-Known limitations and deferred items, with their source. Things here were
-consciously deferred (not bugs blocking the current milestone) during the
-independent code review of the scaffold + Layer 1.
+Known limitations and deferred items. Nothing here blocks the current milestone;
+each entry is a thing Ayo does not do yet, or does in a bounded way, stated so a
+maintainer can pick it up.
 
 ## macOS notification icon
 
@@ -25,8 +25,8 @@ cert (local machines only). To ship the helper on npm it must be signed with a
 **Developer ID Application** cert and **notarized** (`build-notifier.sh NOTARIZE=1`
 already does this given the cert + a stored `ayo-notary` keychain profile). Then a
 darwin-only postinstall (or an `ayo notifier install` command) downloads the
-notarized `Ayo.app` from a GitHub release into `$AYO_DIR`. Needs: Wilson to create
-the Developer ID cert + `notarytool store-credentials`.
+notarized `Ayo.app` from a GitHub release into `$AYO_DIR`. Blocked on an Apple
+Developer ID Application cert + `notarytool store-credentials`.
 
 Also unverified: the Windows toast path has never run on a real box, and app
 identity there ideally wants a registered AppUserModelID (node-notifier `appID` +
@@ -39,11 +39,11 @@ content hash — so a sender changing their clip leaves the old file behind. Bou
 in practice (one ~1 MB clip per sender, rarely changed), but add LRU/size-cap
 pruning if it ever matters.
 
-## Relay hardening (deferred from pre-public security review, 2026-06-29)
+## Relay hardening
 
-The cheap items from that review are DONE on the relay (INTERNAL_SECRET now fails
-closed; send body capped at 4 KB + context at 64 KB; team/hackathon name + status
-validated; generic error messages). Still deferred:
+Done on the relay: `INTERNAL_SECRET` fails closed; send body capped at 4 KB and
+context at 64 KB; team/hackathon name and status validated; error messages are
+generic. Still deferred:
 
 - **Rate limiting** — no limits on `POST /v1/auth/device(/poll)` (unauth, also
   proxies to GitHub), `POST /v1/teams/join` (join-code brute force — 31^6 space,
@@ -64,26 +64,27 @@ validated; generic error messages). Still deferred:
   baked into the published `@ayo-dev/core`. Move to a stable product domain before
   wider adoption so the relay can move without breaking installed CLIs.
 
-## Deferred from review (2026-06-28)
+## Relay scale and correctness
 
-- **Addressing by handle, not userId** — `Ayo.to` stores handles (per ADR 0002).
-  If a member re-aliases their handle, older messages addressed to the old
-  handle stop matching them in inbox/unread filtering. Revisit when aliasing
+- **Addressing by handle, not userId** — `Ayo.to` stores handles (per
+  `docs/protocol.md`). If a member re-aliases their handle, older messages
+  addressed to the old handle stop matching them in inbox/unread filtering.
+  Revisit when aliasing
   ships; likely store recipients as `userId[]` and render handles at read time.
 - **KV `list` 1000-key pagination** — `teamsForUser` and the DO's `storage.list`
   calls don't paginate. Fine at MVP volume; add cursor pagination before a
   team/user can exceed 1000 of anything.
 - **`unread` count vs cursor semantics** — the `ready` frame's `unread` is the
-  global unread count, not "unread since your cursor." Acceptable per ADR, but
+  global unread count, not "unread since your cursor." Acceptable, but
   clarify if the daemon ever surfaces the number to the user.
 - **ULID uses `Math.random()`** — documented in `core/src/ids.ts`. IDs double as
   sortable cursors and don't need to be unguessable, but a production relay
   should use a monotonic, CSPRNG-backed factory before launch.
-- **DO storage is KV-style, not SQLite** — ADR 0002 targets SQLite-in-DO
+- **DO storage is KV-style, not SQLite** — `docs/protocol.md` targets SQLite-in-DO
   (messages/deliveries/members tables) for production; the scaffold uses the DO
   key-value store.
 
-## MCP tools (deferred from review)
+## MCP tools
 
 - **Agent broadcast rate-limiting** — an agent could loop `send_ayo`/`create_handoff`
   with `["*"]` + `urgent`. The relay has a `rate_limited` code, but there's no
@@ -95,7 +96,7 @@ validated; generic error messages). Still deferred:
 - **Staged + unstaged** — `git diff HEAD` covers both (working tree vs HEAD), which
   is intended; documented in the share_context/create_handoff tool descriptions.
 
-## Board / feed (deferred from review)
+## Board / feed
 
 - **DO roster is lazily populated** — a member only enters the team DO's roster
   when they first hit a DO endpoint (daemon connect, send, status, board). So a
@@ -114,10 +115,10 @@ validated; generic error messages). Still deferred:
 - **Board backoff** — on repeated relay errors the board retries on the fixed 3s
   tick (no exponential backoff). Acceptable; revisit if it gets chatty.
 
-## Hackathon mode (deferred from review)
+## Hackathon mode
 
 - **One DO alarm, two would-be uses** — hackathon milestone nudges now use the
-  team DO's single `alarm()`. ADR 0002 earmarked `alarm()` for expiry/resolve
+  team DO's single `alarm()`. `alarm()` is also earmarked for expiry/resolve
   sweeps (not implemented). When expiry sweeps land, `alarm()` needs a dispatch
   table (which job is due) — otherwise whichever `setAlarm()` ran last wins and
   silently cancels the other.
@@ -125,14 +126,14 @@ validated; generic error messages). Still deferred:
   (same bounded-window caveat as the feed); a very long, busy sprint could
   exceed it. Page it before that matters.
 
-## Still open from the build plan
+## Platform and install
 
-- **Real GitHub device flow** (#2) — ✅ implemented (`packages/relay/src/github.ts`
+- **Real GitHub device flow** — ✅ implemented (`packages/relay/src/github.ts`
   + the device handlers in `index.ts`, real poll loop in `cli/src/ayo.ts`).
   Pending: register the OAuth App, set `GITHUB_CLIENT_ID`, and run one real
   browser-authorized login end to end (see `docs/auth-setup.md`). The dev stub
   (`AYO_DEV_AUTH=1`) remains for local testing.
-- **Real daemon install** (#3) — ✅ `ayo daemon install` registers a launchd
+- **Real daemon install** — ✅ `ayo daemon install` registers a launchd
   (macOS) / systemd --user (Linux) service; `start`/`stop`/`status` route through
   it when installed, else the pidfile fallback. launchd path verified end to end
   on macOS. **systemd path is implemented but NOT yet tested on a real Linux box**
@@ -157,7 +158,7 @@ validated; generic error messages). Still deferred:
   destination exists. Revisit (e.g. retry, or a write-lock) if Windows is
   promoted from "fail gracefully" to supported.
 
-## Invite loop / teams (from the C1 invite-loop review)
+## Invite loop / teams
 
 - **Surface the inviter to the joiner** — highest conversion ROI. Today a joiner
   runs `ayo join <code>` and lands on a roster of dots with no anchor to the
@@ -181,7 +182,7 @@ install→join CTA (embeds the team join code by default; opt out with
 snapshot is self-contained in KV (`share:<token>`), so the render path never
 touches the team DO. Strict CSP + full HTML escaping on the public page.
 
-**Shipped (S1b, PR #44) — anonymous reply-back.** A non-user replies right
+**Shipped (S1b) — anonymous reply-back.** A non-user replies right
 from the page (no-JS form POST to `/h/<token>/reply`); it lands in the sender's
 inbox threaded to the handoff, from a guest identity that never touches the
 roster (blank `x-ayo` identity → `rememberMember` no-ops). Reply-first,
@@ -268,9 +269,8 @@ page's "threaded" claim is visible to humans, not just agents.
 
 ## Bespoke fetches left outside the shared transport (core/node consolidation)
 
-The CLI+MCP relay transport was consolidated into `@ayo-dev/core/node`
-(`relayCall` + `RelayError`), but three call sites intentionally kept raw
-`fetch`:
+The CLI+MCP relay transport lives in `@ayo-dev/core/node` (`relayCall` +
+`RelayError`). Three call sites intentionally use raw `fetch`:
 
 - `cli/client.ts` `uploadSound` — sends a raw WAV body (`relayCall` JSON-encodes).
   It also lacks the transport's token redaction and non-JSON-error hardening,
@@ -288,11 +288,11 @@ The relay-must-not-import-`core/node` rule is enforced in CI (grep step in
 `ci.yml`) — keep that step if the workflow is ever restructured.
 
 
-## Account & team lifecycle — deliberately still open (2026-07-04)
+## Account & team lifecycle
 
-Shipped in the lifecycle batch: `ayo logout` (+ rolling 90d session TTL),
-`ayo whoami`, `ayo team leave` (owner-blocked — see below), `ayo team remove`
-(creator-only). Consciously deferred:
+Shipped: `ayo logout` (plus a rolling 90d session TTL), `ayo whoami`,
+`ayo team leave` (owner-blocked, see below), `ayo team remove` (creator-only).
+Still open:
 
 - **Team delete / rename / owner transfer.** An owner currently CANNOT leave
   (it would orphan rotate-code and removal); transfer-then-leave is the fix.
@@ -308,4 +308,4 @@ Shipped in the lifecycle batch: `ayo logout` (+ rolling 90d session TTL),
   Fix shape: a short-lived DO-side tombstone (`removed:<userId>`, ~5 min) that
   rememberMember checks, or periodic roster reconcile against KV.
 - **Scheduled / auto-expiring status** (`--for 2h`), **sender-visible read
-  state**, **expired-ask cleanup** — from the 2026-07-04 lifecycle audit.
+  state**, and **expired-ask cleanup**.

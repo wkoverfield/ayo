@@ -1,5 +1,5 @@
 /**
- * Native OS notification. The daemon owns notification (ADR 0001) — this is how
+ * Native OS notification. The daemon owns notification (see docs/protocol.md) — this is how
  * an arriving Ayo reaches the human in real time, independent of any agent.
  *
  * macOS: node-notifier's bundled terminal-notifier is unsigned and silently
@@ -7,7 +7,7 @@
  * and lands in Notification Center). Linux/Windows: node-notifier.
  *
  * Note: "notified" means the machine *attempted* the toast (osascript exited 0);
- * the OS may still suppress it (Focus/DND). That matches ADR 0002's intent —
+ * the OS may still suppress it (Focus/DND). That matches the protocol's intent —
  * notified is not a guarantee the human saw it.
  */
 

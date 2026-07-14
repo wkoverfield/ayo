@@ -1,5 +1,5 @@
 /**
- * Layer 1 — the magic layer (ADR 0001). Surfaces unread Ayos to an agent at its
+ * Layer 1: surfaces unread Ayos to an agent at its
  * natural breakpoints.
  *
  * Ownership split: the daemon owns notification; the hooks own context
