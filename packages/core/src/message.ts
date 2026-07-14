@@ -1,5 +1,5 @@
 /**
- * The Ayo message object and its delivery-state machine. See ADR 0002.
+ * The Ayo message object and its delivery-state machine. See docs/protocol.md.
  */
 
 import type { AyoId, TeamId, UserId } from "./ids.js";
@@ -94,7 +94,7 @@ export interface Ayo {
   createdAt: string;
 }
 
-/** Max size of a serialized `context.diff`, in bytes. ADR 0002. */
+/** Max size of a serialized `context.diff`, in bytes. See docs/protocol.md. */
 export const MAX_DIFF_BYTES = 64 * 1024;
 
 /**
@@ -106,7 +106,7 @@ export const MAX_DIFF_BYTES = 64 * 1024;
  *  read      a HUMAN explicitly viewed it (inbox / toast click / `ayo open`)
  *  resolved  loop closed
  *
- * Hard rule (ADR 0002): a toast firing is `notified`, never `read`. Only
+ * Hard rule: a toast firing is `notified`, never `read`. Only
  * explicit human action over HTTP advances to `read`.
  */
 export type DeliveryState =

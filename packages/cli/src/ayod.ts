@@ -4,7 +4,7 @@
  * from any of your teams reaches this machine — "route attention to you
  * wherever you are" can't mean "for one team at a time"), pops a native
  * notification the instant an Ayo arrives, and acks machine-level receipt
- * (delivered -> notified). This is the receive path (ADR 0001). It never marks
+ * (delivered -> notified). This is the receive path (see docs/protocol.md). It never marks
  * anything `read` — that requires explicit human action over HTTP.
  *
  * Built to run as a long-lived OS service (launchd/systemd, see service.ts):

@@ -1,6 +1,6 @@
 /**
  * Local config + session at ~/.ayo/. The daemon and the one-shot CLI both read
- * these. `session.json` holds the opaque session token (ADR 0002).
+ * these. `session.json` holds the opaque session token (see docs/protocol.md).
  *
  * The types and file IO live in @ayo-dev/core/node (shared with the MCP server
  * so both always read the same shapes); this module re-exports them and keeps

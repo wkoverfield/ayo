@@ -70,4 +70,4 @@ cp .dev.vars.example .dev.vars
 On successful login the relay reads `GET /user` and maps the GitHub **numeric id**
 to a stable Ayo user (`ghuser:<id>` → userId). The Ayo handle defaults to the
 GitHub login, so a future GitHub username change won't orphan the account. See
-[ADR 0002](adr/0002-relay-contract-and-message-schema.md).
+[the protocol spec](protocol.md).

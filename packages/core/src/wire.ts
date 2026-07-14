@@ -3,7 +3,7 @@
  *
  * Direction is almost entirely server→client. Client→server is limited to
  * heartbeat + receipt acks (machine-level facts). Semantic mutations
- * (read/resolve/status) go over HTTP. See ADR 0002.
+ * (read/resolve/status) go over HTTP. See docs/protocol.md.
  */
 
 import type { AckState, Ayo, DeliveryState, Handle } from "./message.js";

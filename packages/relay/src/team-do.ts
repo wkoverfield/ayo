@@ -1,12 +1,12 @@
 /**
  * TeamHub — one Durable Object per team. The realtime fanout hub: holds member
  * WebSockets (with hibernation), persists messages + per-recipient delivery
- * state + presence, and fans Ayos out to live sockets. See ADR 0002.
+ * state + presence, and fans Ayos out to live sockets. See docs/protocol.md.
  *
  * Identity is always taken from the `x-ayo-*` headers injected by the Worker,
  * never from the client.
  *
- * Storage is the DO key-value store for this scaffold; ADR 0002 targets
+ * Storage is the DO key-value store for this scaffold; docs/protocol.md targets
  * SQLite-in-DO for production (messages/deliveries/members tables).
  */
 
@@ -111,7 +111,7 @@ export class TeamHub implements DurableObject {
 
     const url = new URL(req.url);
     const path = url.pathname;
-    // INVARIANT (ADR 0002): the Worker is the only identity verifier and sets
+    // INVARIANT (docs/protocol.md): the Worker is the only identity verifier and sets
     // x-ayo-user/handle on every forwarded call — EXCEPT guest-reply and
     // remove-member, which deliberately send blank identity (rememberMember
     // below no-ops on blank; for remove-member an identified self-leave caller
@@ -182,7 +182,7 @@ export class TeamHub implements DurableObject {
     // Catch-up: replay only Ayos the machine hasn't confirmed buzzed yet
     // (sent/delivered, NOT notified/read/resolved) — so an already-notified
     // message isn't re-pushed on every reconnect. The daemon's id-dedup is a
-    // belt-and-suspenders backstop, not load-bearing. (ADR 0002 reconnect flow.)
+    // belt-and-suspenders backstop, not load-bearing. (Protocol reconnect flow.)
     const missed = await this.unbuzzedFor(userId, handle);
     for (const ayo of missed) server.send(JSON.stringify({ t: "ayo", ayo } satisfies ServerFrame));
 
@@ -197,10 +197,10 @@ export class TeamHub implements DurableObject {
     } catch {
       return;
     }
-    if (frame.t !== "ack") return; // socket only carries acks (ADR 0002)
+    if (frame.t !== "ack") return; // socket only carries acks (docs/protocol.md)
     // The AckState type is compile-time only; the wire is untrusted. A socket
     // may ONLY advance machine-level state — never forge `read`/`resolved`,
-    // which require an explicit human action over HTTP (ADR 0002 hard rule).
+    // which require an explicit human action over HTTP (protocol hard rule).
     if (frame.state !== "delivered" && frame.state !== "notified") return;
     const meta = ws.deserializeAttachment() as SocketMeta | null;
     if (!meta) return;

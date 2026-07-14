@@ -1,7 +1,7 @@
 /**
  * Type-prefixed, ULID-based ids. ULIDs are lexicographically sortable, so an
  * id doubles as a cursor — `?since=<ayoId>` returns everything after it.
- * See ADR 0002.
+ * See docs/protocol.md.
  */
 
 export type UserId = `user_${string}`;

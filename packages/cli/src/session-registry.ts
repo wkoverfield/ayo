@@ -13,7 +13,7 @@
  *
  * Invariant: a ping is NEVER auto-injected into a non-matching repo without the
  * user acting in that session (a UserPromptSubmit). No implicit cross-repo spread.
- * See docs/specs/sounds-and-actionable-toasts.md and the routing debate.
+ * Toast actions route through here; see docs/protocol.md for the wire contract.
  */
 
 import { execFileSync } from "node:child_process";

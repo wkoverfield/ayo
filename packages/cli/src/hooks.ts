@@ -1,5 +1,5 @@
 /**
- * Install/inspect/remove the agent hooks (ADR 0001, Layer 1).
+ * Install/inspect/remove the agent hooks.
  *
  *  - Claude Code: SessionStart + UserPromptSubmit run `ayo agent-context`, whose
  *    stdout Claude injects into the model. (Stop is NOT used — its stdout goes

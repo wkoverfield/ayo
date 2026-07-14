@@ -2,7 +2,7 @@
 /**
  * Ayo MCP server — exposes Ayo to Codex & Claude so a developer can send pings,
  * share work context, hand off, and manage status without leaving the agent.
- * Receiving in real time is still the daemon's job (ADR 0001); these tools are
+ * Receiving in real time is still the daemon's job (see docs/protocol.md); these tools are
  * send + pull. Identity is shared with the CLI via ~/.ayo (see relay.ts).
  */
 

@@ -48,7 +48,7 @@ a scripted scene to poke at (`scripts/record-demo.sh` renders a terminal gif).
   nowhere is a failure). If you change a send/receive path, keep it honest.
 - **The relay is the only place identity is verified.** The Worker injects the
   authenticated `x-ayo-*` identity into the Durable Object; the DO never trusts
-  a client-supplied identity (see [ADR 0002](docs/adr/0002-relay-contract-and-message-schema.md)).
+  a client-supplied identity (see [the protocol spec](docs/protocol.md)).
   Don't route around that boundary.
 - **No LLM calls, ever.** Ayo moves messages and context; it does not summarize,
   rewrite, or generate. The user runs and pays for the agents.
