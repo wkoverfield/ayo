@@ -46,15 +46,15 @@
   },
   "dependencies": {
     "@ayo-dev/core": "workspace:^",
-    "commander": "^12.1.0",
+    "commander": "^15.0.0",
     "node-notifier": "^10.0.1",
     "picocolors": "^1.1.1",
-    "ws": "^8.18.0"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
+    "@types/node": "^26.1.1",
     "@types/node-notifier": "^8.0.5",
     "@types/ws": "^8.5.13",
-    "typescript": "^5.7.2"
+    "typescript": "^7.0.2"
   }
 }
