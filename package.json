@@ -16,6 +16,6 @@
     "release": "pnpm -r publish --access public"
   },
   "devDependencies": {
-    "typescript": "^5.7.2"
+    "typescript": "^7.0.2"
   }
 }
