@@ -36,6 +36,11 @@ import { notifyAyo } from "./notify.js";
 const MAX_LOG_BYTES = 1_000_000;
 const RETRY_MS = 10_000; // re-check when not logged in / no team
 const SUPERVISE_MS = 30_000; // re-check config for team/login changes while connected
+// The relay roster (me()) is refetched at most this often. Local changes that
+// imply a new roster (re-login, create/join/leave moving the active team)
+// trigger an immediate refetch; the TTL only bounds how long a change made
+// elsewhere (kicked by the owner, joined from another machine) goes unseen.
+const ROSTER_TTL_MS = 5 * 60_000;
 
 // ── Logging (bounded, with in-flight rotation) ───────────────────────────────
 
@@ -91,6 +96,8 @@ const teamNames = new Map<string, string>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 let timerAt = Infinity; // when the pending tick fires — earliest wakeup wins
 let supervising = false; // supervise() is async now; never let two ticks overlap
+/** Last successful me() roster, and the local state it was fetched under. */
+let roster: { token: string; activeTeamId: string | undefined; teamIds: string[]; fetchedAt: number } | null = null;
 
 function schedule(ms: number): void {
   // Earliest-wins: a 30s steady-state tick must never CLOBBER a 1s reconnect
@@ -195,14 +202,24 @@ async function supervise(): Promise<void> {
 
     // Which teams should we stream? Every team you belong to.
     let teamIds: string[] = [];
-    try {
-      const me = await api.me(session);
-      teamNames.clear();
-      for (const t of me.teams) teamNames.set(t.id, t.name);
-      teamIds = me.teams.map((t) => t.id);
-    } catch {
-      // Relay unreachable — keep what we have, make sure the active team is tried.
-      teamIds = [...new Set([...sockets.keys(), ...(cfg.activeTeamId ? [cfg.activeTeamId] : [])])];
+    const rosterStale =
+      !roster ||
+      roster.token !== session.token ||
+      roster.activeTeamId !== cfg.activeTeamId ||
+      Date.now() - roster.fetchedAt >= ROSTER_TTL_MS;
+    if (!rosterStale) {
+      teamIds = roster!.teamIds;
+    } else {
+      try {
+        const me = await api.me(session);
+        teamNames.clear();
+        for (const t of me.teams) teamNames.set(t.id, t.name);
+        teamIds = me.teams.map((t) => t.id);
+        roster = { token: session.token, activeTeamId: cfg.activeTeamId, teamIds, fetchedAt: Date.now() };
+      } catch {
+        // Relay unreachable — keep what we have, make sure the active team is tried.
+        teamIds = [...new Set([...sockets.keys(), ...(cfg.activeTeamId ? [cfg.activeTeamId] : [])])];
+      }
     }
 
     if (teamIds.length === 0) {

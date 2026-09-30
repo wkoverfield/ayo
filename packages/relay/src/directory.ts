@@ -109,10 +109,57 @@ export async function teamByJoinCode(env: Env, code: string): Promise<TeamMeta |
   return id ? getTeam(env, id as TeamId) : null;
 }
 
+/**
+ * Per-user team index: `userteams:<userId>` holds every team the user belongs
+ * to as ONE JSON value, so `GET /v1/me` (polled by every running daemon) costs
+ * a KV read instead of a KV list. List operations have a far smaller quota
+ * than reads (free tier: 1,000/day vs 100,000/day).
+ *
+ * The per-team `usermember:<userId>:<teamId>` keys are still written; they are
+ * the source the index is rebuilt from when it is missing (users who joined
+ * before the index existed). Updates are read-modify-write with no CAS, so two
+ * concurrent joins by the same user can drop one entry; deleting the
+ * `userteams:` key forces a rebuild from `usermember:` on the next read.
+ */
+interface UserTeamEntry {
+  teamId: TeamId;
+  handle: Handle;
+}
+
+const userTeamsKey = (userId: UserId) => `userteams:${userId}`;
+
+async function readUserTeams(env: Env, userId: UserId): Promise<UserTeamEntry[] | null> {
+  const raw = await env.AYO_KV.get(userTeamsKey(userId));
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw) as UserTeamEntry[];
+  } catch {
+    return null; // corrupt: treat as missing so it is rebuilt
+  }
+}
+
+async function rebuildUserTeams(env: Env, userId: UserId): Promise<UserTeamEntry[]> {
+  const list = await env.AYO_KV.list({ prefix: `usermember:${userId}:` });
+  const entries: UserTeamEntry[] = [];
+  for (const key of list.keys) {
+    const teamId = key.name.split(":")[2] as TeamId;
+    const handle = ((await env.AYO_KV.get(key.name)) ?? "") as Handle;
+    entries.push({ teamId, handle });
+  }
+  await env.AYO_KV.put(userTeamsKey(userId), JSON.stringify(entries));
+  return entries;
+}
+
+async function loadUserTeams(env: Env, userId: UserId): Promise<UserTeamEntry[]> {
+  return (await readUserTeams(env, userId)) ?? (await rebuildUserTeams(env, userId));
+}
+
 export async function addMember(env: Env, m: Membership): Promise<void> {
   await env.AYO_KV.put(`member:${m.teamId}:${m.userId}`, JSON.stringify(m));
-  // Reverse index for `GET /v1/me`.
   await env.AYO_KV.put(`usermember:${m.userId}:${m.teamId}`, m.handle);
+  const entries = (await loadUserTeams(env, m.userId)).filter((e) => e.teamId !== m.teamId);
+  entries.push({ teamId: m.teamId, handle: m.handle });
+  await env.AYO_KV.put(userTeamsKey(m.userId), JSON.stringify(entries));
 }
 
 export async function getMembership(
@@ -128,12 +175,9 @@ export async function teamsForUser(
   env: Env,
   userId: UserId,
 ): Promise<{ id: TeamId; name: string; handle: Handle }[]> {
-  const list = await env.AYO_KV.list({ prefix: `usermember:${userId}:` });
   const out: { id: TeamId; name: string; handle: Handle }[] = [];
-  for (const key of list.keys) {
-    const teamId = key.name.split(":")[2] as TeamId;
+  for (const { teamId, handle } of await loadUserTeams(env, userId)) {
     const team = await getTeam(env, teamId);
-    const handle = (await env.AYO_KV.get(key.name)) ?? "";
     if (team) out.push({ id: team.id, name: team.name, handle });
   }
   return out;
@@ -149,4 +193,8 @@ export async function teamForAyo(env: Env, ayoId: AyoId): Promise<TeamId | null>
 export async function removeMembership(env: Env, teamId: TeamId, userId: UserId): Promise<void> {
   await env.AYO_KV.delete(`member:${teamId}:${userId}`);
   await env.AYO_KV.delete(`usermember:${userId}:${teamId}`);
+  const entries = await readUserTeams(env, userId);
+  if (entries) {
+    await env.AYO_KV.put(userTeamsKey(userId), JSON.stringify(entries.filter((e) => e.teamId !== teamId)));
+  }
 }
