@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Command, Help } from "commander";
 import pc from "picocolors";
+import { pkgVersion } from "@ayo-dev/core/node";
 import {
   AYO_DIR,
   DAEMON_META_PATH,
@@ -42,16 +43,8 @@ import { soundList, soundMute, soundPreview, soundSet, soundStatus, soundUnmute,
 
 // Read the real version from package.json (dist/ayo.js → ../package.json, which
 // npm always includes in the tarball). Fall back so `--version` can never throw.
-function pkgVersion(): string {
-  try {
-    return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-}
-
 const program = new Command();
-program.name("ayo").description("Ping your teammates from inside Codex and Claude.").version(pkgVersion());
+program.name("ayo").description("Ping your teammates from inside Codex and Claude.").version(pkgVersion(import.meta.url));
 program.showSuggestionAfterError(true);
 
 // Help lists everyday commands before plumbing — beloved CLIs teach the primary
@@ -1119,9 +1112,9 @@ program
       } catch {
         /* older daemon wrote no meta */
       }
-      const skew = dv && dv !== pkgVersion();
+      const skew = dv && dv !== pkgVersion(import.meta.url);
       console.log(pc.green(`✓ daemon running (ayod${dv ? ` v${dv}` : ""})`));
-      if (skew) console.log(pc.yellow(`⚠ daemon is v${dv} but the CLI is v${pkgVersion()} — restart it: \`ayo daemon stop && ayo daemon start\``));
+      if (skew) console.log(pc.yellow(`⚠ daemon is v${dv} but the CLI is v${pkgVersion(import.meta.url)} — restart it: \`ayo daemon stop && ayo daemon start\``));
       else if (!dv) console.log(pc.dim("  (daemon predates version reporting — restart it once so doctor can check for skew)"));
     } else {
       console.log(pc.yellow("⚠ daemon not running — `ayo daemon install` (or `ayo daemon start`)"));

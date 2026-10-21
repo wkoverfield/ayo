@@ -9,3 +9,4 @@
 export * from "./files.js";
 export * from "./http.js";
 export * from "./git-context.js";
+export * from "./version.js";
