@@ -20,7 +20,10 @@
   },
   "pnpm": {
     "overrides": {
-      "node-notifier>uuid": "^11.1.1"
+      "node-notifier>uuid": "^11.1.1",
+      "body-parser@>=2.0.0 <2.4.0": "^2.4.0",
+      "qs@>=6.7.0 <6.16.1": "^6.16.1",
+      "fast-uri@>=3.0.0 <3.1.9": "^3.1.9"
     }
   }
 }
